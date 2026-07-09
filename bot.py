@@ -34,15 +34,15 @@ def keep_alive():
     t.start()
 
 # ===================== কনফিগারেশন =====================
-API_KEY      = "MUBTR1MKUBO"
+API_KEY      = "MUYZ1SXYKG8"
 BOT_TOKEN    = "8631753930:AAF3KQoemdXXZheB7rXVi4nzKmB1rYKAtCI"
 BASE_URL     = "https://api.2oo9.cloud/MXS47FLFX0U/tness/@public/api"
 HEADERS      = {"mauthapi": API_KEY}
-ADMIN_ID     = "6136815573"
-GROUP_URL    = "https://t.me/tem_withh"
-FIREBASE_URL = "https://my-otp-bot-e8ef9-default-rtdb.firebaseio.com/"
+ADMIN_ID     = "6730133217"
+GROUP_URL    = "https://t.me/otpgurup1"
+FIREBASE_URL = "https://shuvo-e559e-default-rtdb.firebaseio.com/"
 
-REQUIRED_CHANNELS = ["@range_channele", "@tem_withh"]
+REQUIRED_CHANNELS = ["@es_supprt_gurup", "@es_supprt_gurup"]
 
 FIXED_SERVICES = ["Facebook", "WhatsApp", "Telegram", "Instagram"]
 
