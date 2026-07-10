@@ -184,36 +184,13 @@ def generate_profile_or_get_saved():
 
 def main_menu_keyboard(user_id: int, lang: str):
     ln = LANGUAGES[lang]
-    
-    # 🔵 নীল (Primary)
-    btn_balance = KeyboardButton(ln["btn_balance"])
-    btn_balance.__dict__["style"] = "primary"
-    
-    btn_tasks = KeyboardButton(ln["btn_tasks"])
-    btn_tasks.__dict__["style"] = "primary"
-    
-    # 🟢 সবুজ (Success)
-    btn_report = KeyboardButton(ln["btn_report"])
-    btn_report.__dict__["style"] = "success"
-    
-    btn_language = KeyboardButton(ln["btn_language"])
-    btn_language.__dict__["style"] = "success"
-    
-    # 🔴 লাল (Danger)
-    btn_withdraw = KeyboardButton(ln["btn_withdraw"])
-    btn_withdraw.__dict__["style"] = "danger"
-    
     buttons = [
-        [btn_balance, btn_tasks],
-        [btn_withdraw, btn_report],
-        [btn_language]
+        [ln["btn_balance"], ln["btn_tasks"]],
+        [ln["btn_withdraw"], ln["btn_report"]],
+        [ln["btn_language"]]
     ]
-    
     if user_id == ADMIN_ID:
-        btn_admin = KeyboardButton(ln["btn_admin"])
-        btn_admin.__dict__["style"] = "danger"
-        buttons.append([btn_admin])
-        
+        buttons.append([ln["btn_admin"]])
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
 
 # ============================================================
@@ -463,7 +440,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             USER_STATE.pop(user_id, None)
             return
 
-    # --- 2FA SECRET KEY SUBMISSION ---
+    # --- 2FA SECRET KEY SUBMISSION (CUSTOM FORMATTED BOX WITH REFRESH BUTTON ONLY) ---
     if USER_STATE.get(user_id, {}).get("step") == "waiting_for_2fa":
         if text == ln["btn_cancel"] or text.lower() == "cancel":
             await update.message.reply_text(ln["btn_cancel"], reply_markup=main_menu_keyboard(user_id, lang))
