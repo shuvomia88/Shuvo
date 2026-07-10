@@ -1,6 +1,2 @@
-pyTelegramBotAPI
-requests
-pycountry
-Flask
-firebase-admin
-phonenumbers
+python-telegram-bot==20.8
+pyotp==2.9.0
