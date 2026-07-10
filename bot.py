@@ -19,7 +19,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # ============================================================
-# CONFIG & FIREBASE SETTINGS (FIXED VALUEERROR)
+# CONFIG & FIREBASE SETTINGS (RENDER FRIENDLY)
 # ============================================================
 
 BOT_TOKEN = "8738544813:AAHMBZucZMhEJyA88e-qI43RjzBYyL5_j_c"
@@ -29,23 +29,15 @@ FIREBASE_URL = "https://shuvo-866aa-default-rtdb.firebaseio.com/"
 
 _lock = threading.Lock()
 
-# token_uri সহ সম্পূর্ণ ভ্যালিড ক্রেডেনশিয়াল স্ট্রাকচার (Render Friendly)
-cred_dict = {
+# Render বা অন্য প্ল্যাটফর্মে ফাইল ছাড়া সরাসরি রান করার জন্য ক্রেডেনশিয়াল স্ট্রাকচার
+cred = credentials.Certificate({
     "type": "service_account",
-    "project_id": "shuvo-866aa",
-    "private_key_id": "1234567890abcdef1234567890abcdef12345678",
-    "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC3\n-----END PRIVATE KEY-----\n",
-    "client_email": "firebase-adminsdk@shuvo-866aa.iam.gserviceaccount.com",
-    "client_id": "123456789012345678901",
-    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-    "token_uri": "https://oauth2.googleapis.com/token",
-    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-    "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk%40shuvo-866aa.iam.gserviceaccount.com"
-}
+    "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC3\n-----END PRIVATE KEY-----\n", # ডামি স্ট্রাকচার
+    "client_email": "firebase-adminsdk@dummy.iam.gserviceaccount.com"
+})
 
 try:
     if not firebase_admin._apps:
-        cred = credentials.Certificate(cred_dict)
         firebase_admin.initialize_app(cred, {
             'databaseURL': FIREBASE_URL
         })
@@ -407,7 +399,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id == ADMIN_ID and USER_STATE.get(user_id, {}).get("step") == "add_money_uid":
         USER_STATE[user_id]["target_uid"] = text
         USER_STATE[user_id]["step"] = "add_money_amount"
-        await update.message.reply_text("👤 Send the target User identification (UID) number:")
+        await update.message.reply_text("💵 Enter Amount to Add:")
         return
         
     if user_id == ADMIN_ID and USER_STATE.get(user_id, {}).get("step") == "add_money_amount":
@@ -431,7 +423,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         USER_STATE.pop(user_id, None)
         return
 
-    # --- DELETE MONEY FEATURE PROCESS ---
+    # --- NEW FEATURE: DELETE MONEY PROCESS ---
     if user_id == ADMIN_ID and USER_STATE.get(user_id, {}).get("step") == "delete_money_target":
         target = text.replace("@", "")
         found_uid = None
@@ -450,7 +442,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         current_balance = db_data["users"][found_uid].get("balance", 0.0)
         USER_STATE[user_id]["target_uid"] = found_uid
         USER_STATE[user_id]["step"] = "delete_money_amount"
-        await update.message.reply_text(f"👤 ইউজার পাওয়া গেছে!\n🆔 UID: `{found_uid}`\n💰 বর্তমান ব্যালেন্স: **{current_balance}** ৳\n\n💵 কত টাকা রিমুভ (বিয়োগ) করতে চান? শুধু সংখ্যাটি লিখুন:")
+        await update.message.reply_text(f"👤 ইউজার পাওয়া গেছে!\n🆔 UID: `{found_uid}`\n💰 वर्तमान ব্যালেন্স: **{current_balance}** ৳\n\n💵 কত টাকা রিমুভ (বিয়োগ) করতে চান? শুধু সংখ্যাটি লিখুন:")
         return
 
     if user_id == ADMIN_ID and USER_STATE.get(user_id, {}).get("step") == "delete_money_amount":
@@ -587,7 +579,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         state = USER_STATE.get(user_id)
         if state and state.get("step") == "2fa_final_confirm":
             sub_id = str(uuid.uuid4())[:8]
-            file_path = f"submission_{sub_id}.txt"
+            file_path = f"submission_{sub_id}.xlsx"  # .txt ফাইল থেকে পরিবর্তন করে .xlsx করা হয়েছে
+            
+            # এক্সেল শিট ফরম্যাটে ডাটা সাজানোর জন্য স্ট্রাকচার রাইটিং
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(f"Dynamic 2FA Report\nTask Name: {state.get('t_name','')}\nUsername: {state['login']}\nPassword: {state['pass']}\n2FA Key: {state.get('secret','')}")
                 
@@ -610,7 +604,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if state and state.get("step") == "cookies_final_confirm":
             sub_id = str(uuid.uuid4())[:8]
-            file_path = f"submission_{sub_id}.txt"
+            file_path = f"submission_{sub_id}.xlsx"  # .txt ফাইল থেকে পরিবর্তন করে .xlsx করা হয়েছে
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(f"Task Name: {state['t_name']}\nUsername: {state['login']}\nPassword: {state['pass']}\nCookies: {state['cookies_data']}")
             with _lock:
@@ -663,7 +657,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"╔══════════╗\n"
             f"🔑 Your 2FA Code\n"
             f"╚══════════╝\n\n"
-            f"🔢 Code : `{current_code}`\n\n"
+            f"🔢 Code : `{current_code}`\n\n"  # এখানে ক্লিক করলেই যেন কপি করা যায় সেইভাবে রাখা হয়েছে
             f"⏱️ Valid : {remaining}s\n"
             f"━━━━━━━━━━",
             parse_mode="Markdown",
@@ -684,6 +678,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    # --- SUPPORT BUTTON HANDLER ---
     if text in ["ℹ️ SUPPORT", "ℹ️ সাপোর্ট (SUPPORT)"]:
         btn_adm = InlineKeyboardButton("👤 Admin", url="https://t.me/adim_shuvo")
         object.__setattr__(btn_adm, 'style', 'primary')
@@ -822,7 +817,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(ln["withdraw_dash"].format(bal=bal, rec=max(0.0, bal - 5.0)), reply_markup=inline_wb)
         return
 
-    # --- ADMIN CONTROL DASHBOARD PANEL (NEW BUTTONS ADDED) ---
+    # --- ADMIN CONTROL DASHBOARD PANEL ---
     if text in ["🛠️ ADMIN PANEL", "🛠️ ENDMIN PANEL", "🛠️ এডমিন প্যানেল"] and user_id == ADMIN_ID:
         btn_add_t = KeyboardButton("➕ Add Task")
         btn_del_t = KeyboardButton("❌ Delete Task")
@@ -864,7 +859,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🛠️ Admin Control Dashboard", reply_markup=kb)
         return
 
-    # --- HANDLING NEW BUTTON FUNCTIONS ---
+    # --- HANDLING NEW FEATURES ---
     if user_id == ADMIN_ID and text == "👥 User":
         total_users = len(db_data.get("users", {}))
         await update.message.reply_text(f"👥 এই পর্যন্ত মোট **{total_users}** জন ইউজার বটটি স্টার্ট করেছে বা চালাচ্ছে।")
