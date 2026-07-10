@@ -1,6 +1,7 @@
-pyTelegramBotAPI
-instaloader
+python-telegram-bot
+firebase-admin
 pyotp
+instaloader
 pandas
 openpyxl
 requests
