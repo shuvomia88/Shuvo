@@ -6,12 +6,29 @@ import uuid
 import random
 import pyotp
 import logging
+from flask import Flask
+from threading import Thread
 
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# ===================== FLASK KEEP-ALIVE (Render) =====================
+_flask_app = Flask(__name__)
+
+@_flask_app.route('/')
+def _home():
+    return "Bot is Running!"
+
+def _run_flask():
+    port = int(os.environ.get("PORT", 8080))
+    _flask_app.run(host="0.0.0.0", port=port)
+
+def keep_alive():
+    t = Thread(target=_run_flask, daemon=True)
+    t.start()
 
 # ============================================================
 # CONFIG
@@ -182,16 +199,27 @@ def generate_profile_or_get_saved():
 # KEYBOARDS
 # ============================================================
 
+def _kb(text, style="primary"):
+    btn = KeyboardButton(text)
+    btn.__dict__["style"] = style
+    return btn
+
+def _ibtn(text, callback_data, style="primary"):
+    btn = InlineKeyboardButton(text, callback_data=callback_data)
+    btn.__dict__["style"] = style
+    return btn
+
 def main_menu_keyboard(user_id: int, lang: str):
     ln = LANGUAGES[lang]
-    buttons = [
-        [ln["btn_balance"], ln["btn_tasks"]],
-        [ln["btn_withdraw"], ln["btn_report"]],
-        [ln["btn_language"]]
+    kb = ReplyKeyboardMarkup(resize_keyboard=True)
+    kb.keyboard = [
+        [_kb(ln["btn_balance"], "primary"),  _kb(ln["btn_tasks"], "primary")],
+        [_kb(ln["btn_withdraw"], "success"), _kb(ln["btn_report"], "primary")],
+        [_kb(ln["btn_language"], "primary")],
     ]
     if user_id == ADMIN_ID:
-        buttons.append([ln["btn_admin"]])
-    return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
+        kb.keyboard.append([_kb(ln["btn_admin"], "danger")])
+    return kb
 
 # ============================================================
 # USER STATE MANAGEMENT
@@ -259,8 +287,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         USER_STATE[user_id]["task_rules"] = text
         USER_STATE[user_id]["step"] = "admin_task_type"
         kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🍪 Cookies Work", callback_data="adm_t_type:cookies")],
-            [InlineKeyboardButton("🛡️ 2FA Work", callback_data="adm_t_type:2fa")]
+            [_ibtn("🍪 Cookies Work", "adm_t_type:cookies", "success")],
+            [_ibtn("🛡️ 2FA Work", "adm_t_type:2fa", "primary")]
         ])
         await update.message.reply_text("🎯 এটি কি ধরনের কাজ হবে নিচে থেকে সিলেক্ট করুন:", reply_markup=kb)
         return
@@ -359,8 +387,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(ln["pay_pending"], reply_markup=main_menu_keyboard(user_id, lang))
             
             admin_kb = InlineKeyboardMarkup([
-                [InlineKeyboardButton("✅ APPROVE", callback_data=f"w_app:{w_id}"),
-                 InlineKeyboardButton("❌ REJECT", callback_data=f"w_rej:{w_id}")]
+                [_ibtn("✅ APPROVE", f"w_app:{w_id}", "success"),
+                 _ibtn("❌ REJECT", f"w_rej:{w_id}", "danger")]
             ])
             await context.bot.send_message(
                 chat_id=ADMIN_ID,
@@ -380,14 +408,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         USER_STATE[user_id]["cookies_data"] = text
         USER_STATE[user_id]["step"] = "cookies_submitted"
-        kb = ReplyKeyboardMarkup([[ln["btn_acc_reg"]], [ln["btn_cancel"]]], resize_keyboard=True)
+        kb = ReplyKeyboardMarkup([[_kb(ln["btn_acc_reg"], "success")], [_kb(ln["btn_cancel"], "danger")]], resize_keyboard=True)
         await update.message.reply_text(ln["cookies_rec"], reply_markup=kb)
         return
 
     if text == ln["btn_acc_reg"]:
         state = USER_STATE.get(user_id)
         if state and (state.get("step") == "cookies_submitted" or state.get("step") == "2fa_verify"):
-            kb = ReplyKeyboardMarkup([[ln["btn_subbed"]], [ln["btn_cancel"]]], resize_keyboard=True)
+            kb = ReplyKeyboardMarkup([[_kb(ln["btn_subbed"], "success")], [_kb(ln["btn_cancel"], "danger")]], resize_keyboard=True)
             await update.message.reply_text(ln["invite_check"], reply_markup=kb)
             if state.get("step") == "cookies_submitted":
                 USER_STATE[user_id]["step"] = "cookies_final_confirm"
@@ -459,11 +487,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         state["step"] = "2fa_verify"
         remaining = 30 - (int(datetime.datetime.now().timestamp()) % 30)
         
-        reg_kb = ReplyKeyboardMarkup([[ln["btn_acc_reg"]], [ln["btn_cancel"]]], resize_keyboard=True)
+        reg_kb = ReplyKeyboardMarkup([[_kb(ln["btn_acc_reg"], "success")], [_kb(ln["btn_cancel"], "danger")]], resize_keyboard=True)
         await update.message.reply_text("👉 2FA Key Received. Now verify and submit using the panel below.", reply_markup=reg_kb)
 
         inline_kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔄 Refresh", callback_data="refresh_2fa_code")]
+            [_ibtn("🔄 Refresh", "refresh_2fa_code", "primary")]
         ])
         
         msg = await update.message.reply_text(
@@ -493,7 +521,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if text in ["🌐 LANGUAGE", "🌐 ভাষা (LANGUAGE)"]:
         kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🇧🇩 বাংলা", callback_data="lang_bn"), InlineKeyboardButton("🇬🇧 English", callback_data="lang_en")]
+            [_ibtn("🇧🇩 বাংলা", "lang_bn", "primary"), _ibtn("🇬🇧 English", "lang_en", "primary")]
         ])
         await update.message.reply_text(ln["select_lang"], reply_markup=kb)
         return
@@ -501,10 +529,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text in ["📋 TASKS", "📋 কাজ (TASKS)"]:
         task_list = []
         if db_data["visibility"].get("instagram_task", True) or user_id == ADMIN_ID:
-            task_list.append(["🎯 Instagram Task" if lang == "en" else "🎯 ইনস্টাগ্রাম কাজ"])
+            task_list.append([_kb("🎯 Instagram Task" if lang == "en" else "🎯 ইনস্টাগ্রাম কাজ", "primary")])
         if db_data["visibility"].get("facebook_task", True) or user_id == ADMIN_ID:
-            task_list.append(["🎯 Facebook Task" if lang == "en" else "🎯 ফেসবুক কাজ"])
-        task_list.append([ln["btn_back"]])
+            task_list.append([_kb("🎯 Facebook Task" if lang == "en" else "🎯 ফেসবুক কাজ", "primary")])
+        task_list.append([_kb(ln["btn_back"], "danger")])
         await update.message.reply_text(ln["select_cat"], reply_markup=ReplyKeyboardMarkup(task_list, resize_keyboard=True))
         return
 
@@ -521,8 +549,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         sub_tasks = []
         for t in active_tasks:
-            sub_tasks.append([f"📌 {t['name']} ({t['price']} ৳)"])
-        sub_tasks.append([ln["btn_cancel"]])
+            sub_tasks.append([_kb(f"📌 {t['name']} ({t['price']} ৳)", "primary")])
+        sub_tasks.append([_kb(ln["btn_cancel"], "danger")])
         await update.message.reply_text(ln["choose_type"], reply_markup=ReplyKeyboardMarkup(sub_tasks, resize_keyboard=True))
         return
 
@@ -539,7 +567,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if target_task:
             tid = target_task["id"]
             USER_STATE[user_id] = {"task_id": tid, "task_type": target_task["type"]}
-            kb = ReplyKeyboardMarkup([[ln["btn_start"]], [ln["btn_video"]], [ln["btn_cancel"]]], resize_keyboard=True)
+            kb = ReplyKeyboardMarkup([[_kb(ln["btn_start"], "success")], [_kb(ln["btn_video"], "primary")], [_kb(ln["btn_cancel"], "danger")]], resize_keyboard=True)
             rules_msg = f"🛡️ 🌟 *{target_task['name']}*\n\n💵 Payout: ৳{target_task['price']}\n\n📝 *Rules:*\n{target_task['rules']}\n\n🚀 Tap START to continue."
             await update.message.reply_text(rules_msg, parse_mode="Markdown", reply_markup=kb)
             return
@@ -568,11 +596,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 
                 if state["task_type"] == "2fa":
                     state["step"] = "waiting_for_2fa"
-                    task_2fa_kb = ReplyKeyboardMarkup([[ln["btn_how_to_2fa"]], [ln["btn_cancel"]]], resize_keyboard=True)
+                    task_2fa_kb = ReplyKeyboardMarkup([[_kb(ln["btn_how_to_2fa"], "primary")], [_kb(ln["btn_cancel"], "danger")]], resize_keyboard=True)
                     await update.message.reply_text(ln["send_2fa_secret"], reply_markup=task_2fa_kb)
                 else:
                     state["step"] = "waiting_for_cookies"
-                    await update.message.reply_text(ln["send_cookies"], reply_markup=ReplyKeyboardMarkup([[ln["btn_cancel"]]], resize_keyboard=True))
+                    await update.message.reply_text(ln["send_cookies"], reply_markup=ReplyKeyboardMarkup([[_kb(ln["btn_cancel"], "danger")]], resize_keyboard=True))
             return
 
     if text in ["📤 WITHDRAW", "📤 টাকা তুলুন"]:
@@ -580,25 +608,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if bal < 50:
             await update.message.reply_text(ln["withdraw_min_err"])
             return
-        inline_wb = InlineKeyboardMarkup([[InlineKeyboardButton("Withdraw", callback_data="start_withdraw")]])
+        inline_wb = InlineKeyboardMarkup([[_ibtn("Withdraw", "start_withdraw", "success")]])
         await update.message.reply_text(ln["withdraw_dash"].format(bal=bal, rec=max(0.0, bal - 5.0)), reply_markup=inline_wb)
         return
 
     # --- ADMIN CONTROL DASHBOARD PANEL ---
     if text in ["🛠️ ADMIN PANEL", "🛠️ এডমিন প্যানেল"] and user_id == ADMIN_ID:
-        kb = ReplyKeyboardMarkup([
-            ["➕ Add Task", "❌ Delete Task"],
-            ["👁️ Task Hide/Show", "👤 User Broadcast"],
-            ["➕ Add Money", "📥 Username Save"],
-            ["🗂️ All Report", ln["btn_back"]]
-        ], resize_keyboard=True)
+        kb = ReplyKeyboardMarkup(resize_keyboard=True)
+        kb.keyboard = [
+            [_kb("➕ Add Task", "success"), _kb("❌ Delete Task", "danger")],
+            [_kb("👁️ Task Hide/Show", "primary"), _kb("👤 User Broadcast", "primary")],
+            [_kb("➕ Add Money", "success"), _kb("📥 Username Save", "primary")],
+            [_kb("🗂️ All Report", "primary"), _kb(ln["btn_back"], "danger")],
+        ]
         await update.message.reply_text("🛠️ Admin Control Dashboard", reply_markup=kb)
         return
 
     if user_id == ADMIN_ID and text == "❌ Delete Task":
         kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("Instagram Tasks", callback_data="adm_del_cat:instagram"),
-             InlineKeyboardButton("Facebook Tasks", callback_data="adm_del_cat:facebook")]
+            [_ibtn("Instagram Tasks", "adm_del_cat:instagram", "danger"),
+             _ibtn("Facebook Tasks", "adm_del_cat:facebook", "danger")]
         ])
         await update.message.reply_text("🗑️ কোন ক্যাটাগরির কাজ ডিলিট করতে চান?", reply_markup=kb)
         return
@@ -610,8 +639,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if user_id == ADMIN_ID and text == "➕ Add Task":
         kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("Instagram", callback_data="adm_cat:instagram"),
-             InlineKeyboardButton("Facebook", callback_data="adm_cat:facebook")]
+            [_ibtn("Instagram", "adm_cat:instagram", "primary"),
+             _ibtn("Facebook", "adm_cat:facebook", "primary")]
         ])
         await update.message.reply_text("📁 কোন ক্যাটাগরিতে কাজ যুক্ত করতে চান?", reply_markup=kb)
         return
@@ -619,8 +648,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id == ADMIN_ID and text == "👁️ Task Hide/Show":
         v = db_data["visibility"]
         kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton(f"IG Cat [{'ON' if v.get('instagram_task',True) else 'OFF'}]", callback_data="h_ig_m"), 
-             InlineKeyboardButton(f"FB Cat [{'ON' if v.get('facebook_task',True) else 'OFF'}]", callback_data="h_fb_m")]
+            [_ibtn(f"IG Cat [{'ON' if v.get('instagram_task',True) else 'OFF'}]", "h_ig_m", "primary"), 
+             _ibtn(f"FB Cat [{'ON' if v.get('facebook_task',True) else 'OFF'}]", "h_fb_m", "primary")]
         ])
         await update.message.reply_text("👁️ Click to Toggle Category Visibility:", reply_markup=kb)
         return
@@ -642,8 +671,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         for s in pending_subs:
             inline_ap = InlineKeyboardMarkup([
-                [InlineKeyboardButton("Approve", callback_data=f"rep_app:{s['sub_id']}"),
-                 InlineKeyboardButton("Reject", callback_data=f"rep_rej:{s['sub_id']}")]
+                [_ibtn("Approve", f"rep_app:{s['sub_id']}", "success"),
+                 _ibtn("Reject", f"rep_rej:{s['sub_id']}", "danger")]
             ])
             await update.message.reply_text(f"User ID: {s['user_id']}\nType: {s['task_type']}\nLogin: {s['login']}\nStatus: Pending", reply_markup=inline_ap)
         return
@@ -675,7 +704,7 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 remaining = 30 - (int(datetime.datetime.now().timestamp()) % 30)
                 
                 inline_kb = InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🔄 Refresh", callback_data="refresh_2fa_code")]
+                    [_ibtn("🔄 Refresh", "refresh_2fa_code", "primary")]
                 ])
                 
                 await query.edit_message_text(
@@ -710,7 +739,7 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         buttons = []
         for t in active_tasks:
-            buttons.append([InlineKeyboardButton(f"🗑️ {t['name']} ({t['price']}৳)", callback_data=f"adm_do_del:{t['id']}")])
+            buttons.append([_ibtn(f"🗑️ {t['name']} ({t['price']}৳)", f"adm_do_del:{t['id']}", "danger")])
             
         await query.message.reply_text("👇 নিচে থেকে যে টাস্কটি ডিলিট করতে চান সেটির উপর চাপুন:", reply_markup=InlineKeyboardMarkup(buttons))
         try: await query.delete_message()
@@ -770,7 +799,7 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         USER_STATE[user_id] = {"step": "withdraw_method"}
         kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("bKash", callback_data="w_meth:bKash"), InlineKeyboardButton("Nagad", callback_data="w_meth:Nagad")]
+            [_ibtn("bKash", "w_meth:bKash", "success"), _ibtn("Nagad", "w_meth:Nagad", "success")]
         ])
         await query.edit_message_text(LANGUAGES[lang]["select_meth"], reply_markup=kb)
         return
@@ -796,8 +825,8 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             _save(d)
         v = d["visibility"]
         kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton(f"IG Master [{'ON' if v.get('instagram_task',True) else 'OFF'}]", callback_data="h_ig_m"), 
-             InlineKeyboardButton(f"FB Master [{'ON' if v.get('facebook_task',True) else 'OFF'}]", callback_data="h_fb_m")]
+            [_ibtn(f"IG Master [{'ON' if v.get('instagram_task',True) else 'OFF'}]", "h_ig_m", "primary"), 
+             _ibtn(f"FB Master [{'ON' if v.get('facebook_task',True) else 'OFF'}]", "h_fb_m", "primary")]
         ])
         await query.edit_message_text("👁️ Category Visibility toggled:", reply_markup=kb)
         return
@@ -857,6 +886,7 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ============================================================
 
 def main():
+    keep_alive()
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT, handle_message))
