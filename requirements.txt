@@ -1,4 +1,6 @@
 pyTelegramBotAPI
-pyrogram
-tgcrypto
-aiogram
+instaloader
+pyotp
+pandas
+openpyxl
+requests
