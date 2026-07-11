@@ -12,58 +12,21 @@ from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboard
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 from telegram.error import TelegramError
 
-import firebase_admin
-from firebase_admin import credentials, db
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # ============================================================
-# CONFIG & FIREBASE SETTINGS (RENDER FRIENDLY)
+# CONFIG & FILE SETTINGS
 # ============================================================
 
 BOT_TOKEN = "8738544813:AAHMBZucZMhEJyA88e-qI43RjzBYyL5_j_c"
 ADMIN_ID = int(os.getenv("ADMIN_ID", "6470499890"))
+
+# বাধ্যতামূলক চ্যানেলগুলোর ইউজারনেম (বটকে অবশ্যই এই চ্যানেলে এডমিন হতে হবে)
 REQUIRED_CHANNELS = ["@range_channele", "@insagramth"]
-FIREBASE_URL = "https://shuvo-866aa-default-rtdb.firebaseio.com/"
 
-_lock = threading.Lock()
-
-# Local JSON backup (যখন Firebase কাজ না করে)
 DATA_FILE = "bot_data_v3.json"
-firebase_ready = False
-ref = None
-
-# ============================================================
-# FIREBASE INITIALIZATION (RENDER-FRIENDLY)
-# ============================================================
-
-firebase_json_raw = os.getenv("FIREBASE_JSON")
-
-try:
-    if firebase_json_raw:
-        try:
-            cred_dict = json.loads(firebase_json_raw)
-            cred = credentials.Certificate(cred_dict)
-            if not firebase_admin._apps:
-                firebase_admin.initialize_app(cred, {
-                    'databaseURL': FIREBASE_URL
-                })
-            ref = db.reference('/')
-            firebase_ready = True
-            logger.info("✅ Firebase Connected Successfully to shuvo-866aa!")
-        except json.JSONDecodeError as je:
-            logger.error(f"❌ FIREBASE_JSON is not valid JSON: {je}")
-            firebase_ready = False
-        except Exception as e:
-            logger.error(f"❌ Firebase Initialization Error: {e}")
-            firebase_ready = False
-    else:
-        logger.warning("⚠️ FIREBASE_JSON environment variable is not set! Using local storage.")
-        firebase_ready = False
-except Exception as e:
-    logger.error(f"❌ Firebase Connection Error: {e}")
-    firebase_ready = False
+_lock = threading.Lock()
 
 # ============================================================
 # MULTI-LANGUAGE DICTIONARY
@@ -166,7 +129,7 @@ LANGUAGES = {
 }
 
 # ============================================================
-# DATABASE FUNCTIONS (FIREBASE REALSYNC)
+# DATABASE FUNCTIONS
 # ============================================================
 
 def _default_data():
@@ -181,67 +144,56 @@ def _default_data():
     }
 
 def _load():
-    with _lock:
-        try:
-            data = ref.get()
-            if data is None:
-                default = _default_data()
-                ref.set(default)
-                return default
-            if "saved_usernames" not in data or data["saved_usernames"] is None:
-                data["saved_usernames"] = []
-            if "dynamic_tasks" not in data or data["dynamic_tasks"] is None:
-                data["dynamic_tasks"] = {}
-            if "users" not in data or data["users"] is None:
-                data["users"] = {}
-            if "submissions" not in data or data["submissions"] is None:
-                data["submissions"] = {}
-            if "withdrawals" not in data or data["withdrawals"] is None:
-                data["withdrawals"] = {}
-            if "task_password" not in data:
-                data["task_password"] = "shuvo9"
-            if "visibility" not in data or data["visibility"] is None:
-                data["visibility"] = {"instagram_task": True, "facebook_task": True}
-            return data
-        except Exception as e:
-            logger.error(f"Firebase Load Error: {e}")
-            return _default_data()
+    if not os.path.exists(DATA_FILE):
+        return _default_data()
+    try:
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            d = json.load(f)
+            if "saved_usernames" not in d:
+                d["saved_usernames"] = []
+            if "dynamic_tasks" not in d:
+                d["dynamic_tasks"] = {}
+            if "task_password" not in d:
+                d["task_password"] = "shuvo9"
+            if "visibility" not in d:
+                d["visibility"] = {"instagram_task": True, "facebook_task": True}
+            return d
+    except:
+        return _default_data()
 
 def _save(data):
-    with _lock:
-        try:
-            ref.set(data)
-        except Exception as e:
-            logger.error(f"Firebase Save Error: {e}")
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
 def get_or_create_user(user_id: int, username: str = ""):
-    data = _load()
-    uid = str(user_id)
-    if uid not in data["users"]:
-        data["users"][uid] = {
-            "user_id": user_id,
-            "username": username if username else "No_Username",
-            "balance": 0.0,
-            "language": "bn", 
-            "success_count": 0,
-            "review_count": 0,
-            "rejected_count": 0
-        }
-        _save(data)
-    return data["users"][uid]
+    with _lock:
+        data = _load()
+        uid = str(user_id)
+        if uid not in data["users"]:
+            data["users"][uid] = {
+                "user_id": user_id,
+                "username": username,
+                "balance": 0.0,
+                "language": "bn", 
+                "success_count": 0,
+                "review_count": 0,
+                "rejected_count": 0
+            }
+            _save(data)
+        return data["users"][uid]
 
 def generate_profile_or_get_saved():
-    data = _load()
-    saved = data.get("saved_usernames", [])
-    if saved:
-        login_name = saved.pop(0)
-        data["saved_usernames"] = saved
-        _save(data)
-        
-        first_names = ["fatima", "wafaa", "ahmed", "youssef", "omar", "nour", "ali"]
-        last_names = ["Zayan", "Emad", "Khan", "Ahmed", "Ali", "Hassan"]
-        f_name = f"{random.choice(first_names)} {random.choice(last_names)}"
-        return f_name, login_name
+    with _lock:
+        data = _load()
+        if data.get("saved_usernames"):
+            login_name = data["saved_usernames"].pop(0)
+            _save(data)
+            
+            first_names = ["fatima", "wafaa", "ahmed", "youssef", "omar", "nour", "ali"]
+            last_names = ["Zayan", "Emad", "Khan", "Ahmed", "Ali", "Hassan"]
+            f_name = f"{random.choice(first_names)} {random.choice(last_names)}"
+            return f_name, login_name
+            
     return None, None
 
 # ============================================================
@@ -441,49 +393,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         USER_STATE.pop(user_id, None)
         return
 
-    # --- NEW FEATURE: DELETE MONEY PROCESS ---
-    if user_id == ADMIN_ID and USER_STATE.get(user_id, {}).get("step") == "delete_money_target":
-        target = text.replace("@", "")
-        found_uid = None
-        if target.isdigit() and target in db_data.get("users", {}):
-            found_uid = target
-        else:
-            for uid, uinfo in db_data.get("users", {}).items():
-                if uinfo.get("username", "").lower() == target.lower():
-                    found_uid = uid
-                    break
-        if not found_uid:
-            await update.message.reply_text("❌ এই ইউজারনেম বা UID ফায়ারবেসে খুঁজে পাওয়া যায়নি!")
-            USER_STATE.pop(user_id, None)
-            return
-            
-        current_balance = db_data["users"][found_uid].get("balance", 0.0)
-        USER_STATE[user_id]["target_uid"] = found_uid
-        USER_STATE[user_id]["step"] = "delete_money_amount"
-        await update.message.reply_text(f"👤 ইউজার পাওয়া গেছে!\n🆔 UID: `{found_uid}`\n💰 वर्तमान ব্যালেন্স: **{current_balance}** ৳\n\n💵 কত টাকা রিমুভ (বিয়োগ) করতে চান? শুধু সংখ্যাটি লিখুন:")
-        return
-
-    if user_id == ADMIN_ID and USER_STATE.get(user_id, {}).get("step") == "delete_money_amount":
-        try:
-            amount_to_remove = float(text)
-            target_uid = USER_STATE[user_id]["target_uid"]
-            with _lock:
-                data = _load()
-                if target_uid in data.get("users", {}):
-                    old_bal = data["users"][target_uid].get("balance", 0.0)
-                    new_bal = max(0.0, old_bal - amount_to_remove)
-                    data["users"][target_uid]["balance"] = round(new_bal, 2)
-                    _save(data)
-                    await update.message.reply_text(f"✅ সফলভাবে টাকা রিমুভ করা হয়েছে!\n🆔 UID: `{target_uid}`\n📉 আগের ব্যালেন্স: {old_bal} ৳\n💸 রিমুভ করা হয়েছে: {amount_to_remove} ৳\n💰 বর্তমান ফায়ারবেস ব্যালেন্স: **{data['users'][target_uid]['balance']}** ৳")
-                    try:
-                        await context.bot.send_message(chat_id=int(target_uid), text=f"⚠️ এডমিন আপনার অ্যাকাউন্ট থেকে {amount_to_remove} ৳ কেটে নিয়েছে। বর্তমান ব্যালেন্স: {data['users'][target_uid]['balance']} ৳")
-                    except:
-                        pass
-        except:
-            await update.message.reply_text("❌ ভুল ইনপুট! সঠিক সংখ্যা দিন।")
-        USER_STATE.pop(user_id, None)
-        return
-
     # --- WITHDRAW PROCESS ---
     if USER_STATE.get(user_id, {}).get("step") == "withdraw_num":
         if text == ln["btn_cancel"] or text.lower() == "cancel":
@@ -597,9 +506,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         state = USER_STATE.get(user_id)
         if state and state.get("step") == "2fa_final_confirm":
             sub_id = str(uuid.uuid4())[:8]
-            file_path = f"submission_{sub_id}.xlsx"  # .txt ফাইল থেকে পরিবর্তন করে .xlsx করা হয়েছে
-            
-            # এক্সেল শিট ফরম্যাটে ডাটা সাজানোর জন্য স্ট্রাকচার রাইটিং
+            file_path = f"submission_{sub_id}.txt"
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(f"Dynamic 2FA Report\nTask Name: {state.get('t_name','')}\nUsername: {state['login']}\nPassword: {state['pass']}\n2FA Key: {state.get('secret','')}")
                 
@@ -622,7 +529,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if state and state.get("step") == "cookies_final_confirm":
             sub_id = str(uuid.uuid4())[:8]
-            file_path = f"submission_{sub_id}.xlsx"  # .txt ফাইল থেকে পরিবর্তন করে .xlsx করা হয়েছে
+            file_path = f"submission_{sub_id}.txt"
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(f"Task Name: {state['t_name']}\nUsername: {state['login']}\nPassword: {state['pass']}\nCookies: {state['cookies_data']}")
             with _lock:
@@ -675,7 +582,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"╔══════════╗\n"
             f"🔑 Your 2FA Code\n"
             f"╚══════════╝\n\n"
-            f"🔢 Code : `{current_code}`\n\n"  # এখানে ক্লিক করলেই যেন কপি করা যায় সেইভাবে রাখা হয়েছে
+            f"🔢 Code : `{current_code}`\n\n"
             f"⏱️ Valid : {remaining}s\n"
             f"━━━━━━━━━━",
             parse_mode="Markdown",
@@ -825,10 +732,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if text in ["📤 WITHDRAW", "📤 টাকা তুলুন"]:
         bal = user_profile["balance"]
+        
         if bal < 50:
             btn_fake = InlineKeyboardButton("⚠️ Insufficient Balance", callback_data="popup_error_alert")
-            await update.message.reply_text("❌ Click below to see your error status:", reply_markup=InlineKeyboardMarkup([[btn_fake]]))
+            await update.message.reply_text(
+                "❌ Click below to see your error status:",
+                reply_markup=InlineKeyboardMarkup([[btn_fake]])
+            )
             return
+            
         btn_wth = InlineKeyboardButton("Withdraw", callback_data="start_withdraw")
         object.__setattr__(btn_wth, 'style', 'success')
         inline_wb = InlineKeyboardMarkup([[btn_wth]])
@@ -842,10 +754,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         btn_vis_t = KeyboardButton("👁️ Task Hide/Show")
         btn_brd_t = KeyboardButton("👤 User Broadcast")
         btn_add_m = KeyboardButton("➕ Add Money")
-        btn_del_m = KeyboardButton("💡 Delete Money")
         btn_sav_u = KeyboardButton("📥 Username Save")
-        btn_usr_c = KeyboardButton("👥 User")
-        btn_usr_l = KeyboardButton("📜 All User List")
         btn_all_r = KeyboardButton("🗂️ All Report")
         btn_del_u = KeyboardButton("🗑️ User Delete")
         btn_pwd_t = KeyboardButton("🔐 Password Change")
@@ -856,10 +765,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         object.__setattr__(btn_vis_t, 'style', 'primary')
         object.__setattr__(btn_brd_t, 'style', 'primary')
         object.__setattr__(btn_add_m, 'style', 'success')
-        object.__setattr__(btn_del_m, 'style', 'danger')
         object.__setattr__(btn_sav_u, 'style', 'success')
-        object.__setattr__(btn_usr_c, 'style', 'primary')
-        object.__setattr__(btn_usr_l, 'style', 'primary')
         object.__setattr__(btn_all_r, 'style', 'primary')
         object.__setattr__(btn_del_u, 'style', 'danger')
         object.__setattr__(btn_pwd_t, 'style', 'primary')
@@ -868,41 +774,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         kb = ReplyKeyboardMarkup([
             [btn_add_t, btn_del_t],
             [btn_vis_t, btn_brd_t],
-            [btn_add_m, btn_del_m],
-            [btn_sav_u, btn_pwd_t],
-            [btn_usr_c, btn_usr_l],
+            [btn_add_m, btn_sav_u],
             [btn_all_r, btn_del_u],
-            [btn_back_m]
+            [btn_pwd_t, btn_back_m]
         ], resize_keyboard=True)
         await update.message.reply_text("🛠️ Admin Control Dashboard", reply_markup=kb)
-        return
-
-    # --- HANDLING NEW FEATURES ---
-    if user_id == ADMIN_ID and text == "👥 User":
-        total_users = len(db_data.get("users", {}))
-        await update.message.reply_text(f"👥 এই পর্যন্ত মোট **{total_users}** জন ইউজার বটটি স্টার্ট করেছে বা চালাচ্ছে।")
-        return
-
-    if user_id == ADMIN_ID and text == "📜 All User List":
-        users = db_data.get("users", {})
-        if not users:
-            await update.message.reply_text("বটে এখনো কোনো ইউজার ডাটা নেই।")
-            return
-        report = "📜 **ইউজার লিস্ট ও ব্যালেন্স বিবরণী:**\n\n"
-        for uid, uinfo in users.items():
-            uname = uinfo.get("username", "No_Username")
-            bal = uinfo.get("balance", 0.0)
-            report += f"🆔 UID: `{uid}` | 👤 @{uname} | 💰 ব্যালেন্স: {bal} ৳\n"
-            if len(report) > 3500:
-                await update.message.reply_text(report, parse_mode="Markdown")
-                report = ""
-        if report:
-            await update.message.reply_text(report, parse_mode="Markdown")
-        return
-
-    if user_id == ADMIN_ID and text == "💡 Delete Money":
-        USER_STATE[user_id] = {"step": "delete_money_target"}
-        await update.message.reply_text("🔍 কোন ইউজারের টাকা রিমুভ করতে চান?\nইউজারের **Username** (অ্যাট সাইন @ ছাড়া) অথবা **UID** দিন:")
         return
 
     if user_id == ADMIN_ID and text == "🔐 Password Change":
@@ -1252,7 +1128,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT, handle_message))
     app.add_handler(CallbackQueryHandler(callback_query))
-    logger.info("Bot fully running on Firebase Server.")
+    logger.info("Bot fully updated with Support Button linking to @adim_shuvo.")
     app.run_polling()
 
 if __name__ == "__main__":
