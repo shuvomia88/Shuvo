@@ -354,7 +354,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id == ADMIN_ID and USER_STATE.get(user_id, {}).get("step") == "add_money_uid":
         USER_STATE[user_id]["target_uid"] = text
         USER_STATE[user_id]["step"] = "add_money_amount"
-        await update.message.reply_text("💵 Enter Amount to Add:")
+        await update.message.reply_text("👤 Send the target User identification (UID) number:")
         return
         
     if user_id == ADMIN_ID and USER_STATE.get(user_id, {}).get("step") == "add_money_amount":
@@ -1062,5 +1062,5 @@ def main():
     logger.info("Bot properly initialized and running successfully.")
     app.run_polling()
 
-    if __name__ == "__main__":
-        main()
+if __name__ == "__main__":
+    main()
