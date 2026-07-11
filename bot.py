@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 # CONFIG & FIREBASE INITIALIZATION
 # ============================================================
 
-BOT_TOKEN = "8738544813:AAHMBZucZMhEJyA88e-qI43RjzBYyL5_j_c"
+BOT_TOKEN = "8855399240:AAFcbv7pTj7mtGbDScv809kkGDhcGcrXFiw"
 ADMIN_ID = int(os.getenv("ADMIN_ID", "6470499890"))
 REQUIRED_CHANNELS = ["@range_channele", "@insagramth"]
 
