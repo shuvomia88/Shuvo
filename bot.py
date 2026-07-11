@@ -9,6 +9,16 @@ import logging
 import firebase_admin
 from firebase_admin import credentials, db
 
+# ============================================================
+# FIX FOR PYTHON 3.10+ ASYNCIO EVENT LOOP ISSUE (FOR RENDER)
+# ============================================================
+try:
+    asyncio.get_event_loop()
+except RuntimeError:
+    # যদি কোনো লুপ না থাকে, তবে নতুন একটি লুপ তৈরি করে সেট করে দেওয়া হচ্ছে
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 from telegram.error import TelegramError
@@ -46,7 +56,6 @@ if not firebase_admin._apps:
         cred = credentials.Certificate(FIREBASE_CREDS)
         firebase_admin.initialize_app(cred, {"databaseURL": DATABASE_URL})
     except Exception as e:
-        # এনভায়রনমেন্ট ভ্যারিয়েবলের কারণে সমস্যা হলে ফাইল থেকে রিড করার ব্যাকআপ সিস্টেম
         cred = credentials.Certificate("firebase-creds.json")
         firebase_admin.initialize_app(cred, {"databaseURL": DATABASE_URL})
 
@@ -151,7 +160,7 @@ LANGUAGES = {
 }
 
 # ============================================================
-# ASYNC FIREBASE WRAPPERS (Prevents lag on async loops)
+# ASYNC FIREBASE WRAPPERS
 # ============================================================
 
 def _fb_load_all():
@@ -302,9 +311,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("📹 How to setup 2FA Video Link:\n\nhttps://t.me/range_channele/955")
         return
 
-    # --------------------------------------------------------
-    # ADMIN FLOWS
-    # --------------------------------------------------------
+    # Admin Flows
     if user_id == ADMIN_ID and USER_STATE.get(user_id, {}).get("step") == "admin_change_password":
         USER_STATE.pop(user_id, None)
         await save_db_path("task_password", text)
@@ -389,7 +396,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         USER_STATE.pop(user_id, None)
         return
 
-    # --- WITHDRAW PROCESS ---
+    # Withdraw Process
     if USER_STATE.get(user_id, {}).get("step") == "withdraw_num":
         if text == ln["btn_cancel"] or text.lower() == "cancel":
             USER_STATE.pop(user_id, None)
@@ -460,7 +467,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         USER_STATE.pop(user_id, None)
         return
 
-    # --- COOKIES SUBMISSION ---
+    # Cookies Submission
     if USER_STATE.get(user_id, {}).get("step") == "waiting_for_cookies":
         if text == ln["btn_cancel"] or text.lower() == "cancel":
             USER_STATE.pop(user_id, None)
@@ -537,7 +544,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             USER_STATE.pop(user_id, None)
             return
 
-    # --- 2FA SECRET KEY SUBMISSION ---
+    # 2FA Secret Key Submission
     if USER_STATE.get(user_id, {}).get("step") == "waiting_for_2fa":
         if text == ln["btn_cancel"] or text.lower() == "cancel":
             await update.message.reply_text(ln["btn_cancel"], reply_markup=main_menu_keyboard(user_id, lang))
@@ -578,7 +585,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         state["code_msg_id"] = msg.message_id
         return
 
-    # --- MENU NAVIGATION ---
+    # Navigation Menu
     if text in ["💳 BALANCE", "💳 ব্যালেন্স"]:
         await update.message.reply_text(ln["balance_msg"].format(bal=user_profile.get('balance', 0.0)), reply_markup=main_menu_keyboard(user_id, lang))
         return
@@ -590,7 +597,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # --- SUPPORT BUTTON HANDLER ---
     if text in ["ℹ️ SUPPORT", "ℹ️ সাপোর্ট (SUPPORT)"]:
         btn_adm = InlineKeyboardButton("👤 Admin", url="https://t.me/adim_shuvo")
         inline_kb = InlineKeyboardMarkup([[btn_adm]])
@@ -720,7 +726,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(ln["withdraw_dash"].format(bal=bal, rec=max(0.0, bal - 5.0)), reply_markup=inline_wb)
         return
 
-    # --- ADMIN CONTROL DASHBOARD PANEL ---
+    # Admin Panel Control
     if text in ["🛠️ ADMIN PANEL", "🛠️ ENDMIN PANEL", "🛠️ এডমিন প্যানেল"] and user_id == ADMIN_ID:
         btn_add_t = KeyboardButton("➕ Add Task")
         btn_del_t = KeyboardButton("❌ Delete Task")
@@ -1074,7 +1080,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT, handle_message))
     app.add_handler(CallbackQueryHandler(callback_query))
-    logger.info("Bot fully updated with Firebase Realtime Database integration.")
+    logger.info("Bot successfully loaded with event loop fix.")
     app.run_polling()
 
 if __name__ == "__main__":
