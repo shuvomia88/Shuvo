@@ -29,23 +29,41 @@ FIREBASE_URL = "https://shuvo-866aa-default-rtdb.firebaseio.com/"
 
 _lock = threading.Lock()
 
-# Render বা অন্য প্ল্যাটফর্মে ফাইল ছাড়া সরাসরি রান করার জন্য ক্রেডেনশিয়াল স্ট্রাকচার
-cred = credentials.Certificate({
-    "type": "service_account",
-    "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC3\n-----END PRIVATE KEY-----\n", # ডামি স্ট্রাকচার
-    "client_email": "firebase-adminsdk@dummy.iam.gserviceaccount.com"
-})
+# Local JSON backup (যখন Firebase কাজ না করে)
+DATA_FILE = "bot_data_v3.json"
+firebase_ready = False
+ref = None
+
+# ============================================================
+# FIREBASE INITIALIZATION (RENDER-FRIENDLY)
+# ============================================================
+
+firebase_json_raw = os.getenv("FIREBASE_JSON")
 
 try:
-    if not firebase_admin._apps:
-        firebase_admin.initialize_app(cred, {
-            'databaseURL': FIREBASE_URL
-        })
-    logger.info("✓ Firebase Connected Successfully to shuvo-866aa!")
+    if firebase_json_raw:
+        try:
+            cred_dict = json.loads(firebase_json_raw)
+            cred = credentials.Certificate(cred_dict)
+            if not firebase_admin._apps:
+                firebase_admin.initialize_app(cred, {
+                    'databaseURL': FIREBASE_URL
+                })
+            ref = db.reference('/')
+            firebase_ready = True
+            logger.info("✅ Firebase Connected Successfully to shuvo-866aa!")
+        except json.JSONDecodeError as je:
+            logger.error(f"❌ FIREBASE_JSON is not valid JSON: {je}")
+            firebase_ready = False
+        except Exception as e:
+            logger.error(f"❌ Firebase Initialization Error: {e}")
+            firebase_ready = False
+    else:
+        logger.warning("⚠️ FIREBASE_JSON environment variable is not set! Using local storage.")
+        firebase_ready = False
 except Exception as e:
-    logger.warning(f"❌ Firebase Connection Warning: {e}")
-
-ref = db.reference('/')
+    logger.error(f"❌ Firebase Connection Error: {e}")
+    firebase_ready = False
 
 # ============================================================
 # MULTI-LANGUAGE DICTIONARY
