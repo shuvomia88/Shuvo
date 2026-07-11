@@ -1,12 +1,13 @@
 import os
 import json
-import threading
+import asyncio
 import datetime
 import uuid
 import random
 import pyotp
 import logging
-import asyncio
+import firebase_admin
+from firebase_admin import credentials, db
 
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
@@ -16,17 +17,33 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # ============================================================
-# CONFIG & FILE SETTINGS
+# CONFIG & FIREBASE INITIALIZATION
 # ============================================================
 
 BOT_TOKEN = "8738544813:AAHMBZucZMhEJyA88e-qI43RjzBYyL5_j_c"
 ADMIN_ID = int(os.getenv("ADMIN_ID", "6470499890"))
-
-# বাধ্যতামূলক চ্যানেলগুলোর ইউজারনেম
 REQUIRED_CHANNELS = ["@range_channele", "@insagramth"]
 
-DATA_FILE = "bot_data_v3.json"
-_lock = threading.Lock()
+# Firebase Service Account Credentials
+FIREBASE_CREDS = {
+  "type": "service_account",
+  "project_id": "shuvo-866aa",
+  "private_key_id": "21ae4fa0c2f9a8b8392dba63a9672709e08c5d44",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEuwIBADANBgkqhkiG9w0BAQEFAASCBKUwggShAgEAAoIBAQDTPR//ELuR8phl\nC3at3UPaDc5quupB+6NqE5bYDKVB8hu5SHOmL3hZ3lYAtMV42xhn00WbxEoTgdpt\nUEaMQVIe1wwBRinB+LxMFkVv5yZIJxBGQNa+gWmK6RaBoAocpggbbygbLbulW2i4\nHorFy6UeERsyRDw9TEo6dLP4UQoiG2BFzOxiFQS+mFvk3l44M2qbjoxXElvTZiBq\ns+WtU75mSvJBUx0LsKMx+rLxGepu3qczqqec/v6e8VNWDHZ0jai03Jd2GUzoR7Ld\nCmMEDpO9RWo1e7BFo4Den2J6dF0oDlqs3Mf2dkCNLoKeP96UR2ZTcLWAjcOIbzO1\nSc5jh843AgMBAAECgf9FF97fWmUO5vgP9tWXCP1dTeqJSdZVzdOPIo3hlYyWdlbI\nS3mIcRyZsfoGE+2wob0lKaLt304BIn+xbuNKGyKbmXAfGK5ivFsXAIw9Ub/wBvUX\nFKW/mzpqagByku3o+IPbhGmhax9XWMOGDFlIwpdHGLq1+iNBjzKaN4LikFQD8XZg\n0ryqRMtK/YJBy3Pb38/Tl1d4q80J3YXU+ri2oApLR0c1cxB+dY8RVAtiXcmx0L/r\nwJDS0V6kMtZImH9zW2hm1qXArTp62auAhFq1tL3h4QGUHvPYNfXHyxGVyWrkUMh1\n5R1B0gFrB6oXqlWahBGf2FjeAOlXJZdLU0R8Rj0CgYEA64iLrPhq6HMGrrausYkb\nf0IGbWHhh1ABb2nuXO1NQUDHVmi/toLGGwS/SNHmzmnPTPYYImjXfe+tTpV9ULUL\nj+vIAXp+kszQxcSo9LeYHXMAb6JLxnJBPuBKF26StP3mntw2rqQR/cOLAC/yI2G2\n51cTAE5qKPMtIAvxHY7wMpUCgYEA5Zgk7kBfyDZJt8EV2z33BspoOY/+F6vjYUVf\nlQTsLS+ClCbrOb+DxcdtyTxtHuQDeUJsE2d+lU+QEPIhZRbnVD1+ACsrdv+eZGuG\nG4JR1VWXDmWownTrQzBz950X3r0uCGQzlTcThQxuHW/nLWHHuAPpnoQ9/1Ho/ykE\nm3gG9psCgYAC8Jddt1QORrFEqP8RNDblpbtSzi/0cmkyLM5O1p9qOxbB21jZPFSg\rbR9gjExTlzKByBR/aEC72ToYDFKOphEWZsLea3uwyOv9D5vn4MEixTsT8hGV9K8\nqCwEktq965VfUjxUfbPDyRcJD5AkJOoVhR61mET28eIUTlHaHpic6QKBgCw9SMBv\nvwUBEOtLVT7Njc/NKJAO4tME1+diSqyYKjn6sZqCdUjHUkjFyK3B6vTM0q6G0fRb\nONTkY8ogHbcw1powzxqRNurTDl4jKdAbKFGHEHhBtmbhyINFztKjfnn40enkBNx3\npFc6se0SJuVjtewLNPTKXnfX/KFN8glS82SJAoGBAOYjwt3jxalPVPOTPwnmdIbP\n65I40NVo4L6SPAd2HqAyvmcXPjwrmeSjyEgj5IlAQBuGSMaGZgkqw+TrvDNRalq/\nTPmtjzq4hqyyGS5r3lHC916QBJfVXv2QV4jUGKD+KWejwU3PrtF4wiLvF4EIbPJ1\nIb+nDcQ7FeRIiO27dkQ7\n-----END PRIVATE KEY-----\n",
+  "client_email": "firebase-adminsdk-fbsvc@shuvo-866aa.iam.gserviceaccount.com",
+  "client_id": "101947082739477661394",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40shuvo-866aa.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
+
+DATABASE_URL = "https://shuvo-866aa-default-rtdb.firebaseio.com/"
+
+if not firebase_admin._apps:
+    cred = credentials.Certificate(FIREBASE_CREDS)
+    firebase_admin.initialize_app(cred, {"databaseURL": DATABASE_URL})
 
 # ============================================================
 # MULTI-LANGUAGE DICTIONARY
@@ -129,71 +146,65 @@ LANGUAGES = {
 }
 
 # ============================================================
-# DATABASE FUNCTIONS
+# ASYNC FIREBASE WRAPPERS (Prevents lag on async loops)
 # ============================================================
 
-def _default_data():
-    return {
-        "users": {},
-        "submissions": {},
-        "withdrawals": {},
-        "dynamic_tasks": {},
-        "saved_usernames": [],
-        "task_password": "shuvo9",
-        "visibility": {"instagram_task": True, "facebook_task": True}
-    }
+def _fb_load_all():
+    ref = db.reference("/")
+    snapshot = ref.get()
+    if not snapshot:
+        snapshot = {}
+    if "users" not in snapshot: snapshot["users"] = {}
+    if "submissions" not in snapshot: snapshot["submissions"] = {}
+    if "withdrawals" not in snapshot: snapshot["withdrawals"] = {}
+    if "dynamic_tasks" not in snapshot: snapshot["dynamic_tasks"] = {}
+    if "saved_usernames" not in snapshot: snapshot["saved_usernames"] = []
+    if "task_password" not in snapshot: snapshot["task_password"] = "shuvo9"
+    if "visibility" not in snapshot: snapshot["visibility"] = {"instagram_task": True, "facebook_task": True}
+    return snapshot
 
-def _load():
-    if not os.path.exists(DATA_FILE):
-        return _default_data()
-    try:
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            d = json.load(f)
-            if "saved_usernames" not in d:
-                d["saved_usernames"] = []
-            if "dynamic_tasks" not in d:
-                d["dynamic_tasks"] = {}
-            if "task_password" not in d:
-                d["task_password"] = "shuvo9"
-            if "visibility" not in d:
-                d["visibility"] = {"instagram_task": True, "facebook_task": True}
-            return d
-    except:
-        return _default_data()
+async def load_db():
+    return await asyncio.to_thread(_fb_load_all)
 
-def _save(data):
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+def _fb_save_path(path, data):
+    db.reference(path).set(data)
 
-def get_or_create_user(user_id: int, username: str = ""):
-    with _lock:
-        data = _load()
-        uid = str(user_id)
-        if uid not in data["users"]:
-            data["users"][uid] = {
-                "user_id": user_id,
-                "username": username,
-                "balance": 0.0,
-                "language": "bn", 
-                "success_count": 0,
-                "review_count": 0,
-                "rejected_count": 0
-            }
-            _save(data)
-        return data["users"][uid]
+async def save_db_path(path, data):
+    await asyncio.to_thread(_fb_save_path, path, data)
 
-def generate_profile_or_get_saved():
-    with _lock:
-        data = _load()
-        if data.get("saved_usernames"):
-            login_name = data["saved_usernames"].pop(0)
-            _save(data)
-            
-            first_names = ["fatima", "wafaa", "ahmed", "youssef", "omar", "nour", "ali"]
-            last_names = ["Zayan", "Emad", "Khan", "Ahmed", "Ali", "Hassan"]
-            f_name = f"{random.choice(first_names)} {random.choice(last_names)}"
-            return f_name, login_name
-            
+async def get_or_create_user(user_id: int, username: str = ""):
+    uid = str(user_id)
+    ref = db.reference(f"users/{uid}")
+    u_data = await asyncio.to_thread(ref.get)
+    if not u_data:
+        u_data = {
+            "user_id": user_id,
+            "username": username,
+            "balance": 0.0,
+            "language": "bn", 
+            "success_count": 0,
+            "review_count": 0,
+            "rejected_count": 0
+        }
+        await save_db_path(f"users/{uid}", u_data)
+    return u_data
+
+def _fb_pop_username():
+    ref = db.reference("saved_usernames")
+    current_list = ref.get()
+    if current_list and len(current_list) > 0:
+        login_name = current_list.pop(0)
+        ref.set(current_list)
+        return login_name
+    return None
+
+async def generate_profile_or_get_saved():
+    login_name = await asyncio.to_thread(_fb_pop_username)
+    if login_name:
+        first_names = ["fatima", "wafaa", "ahmed", "youssef", "omar", "nour", "ali"]
+        last_names = ["Zayan", "Emad", "Khan", "Ahmed", "Ali", "Hassan"]
+        f_name = f"{random.choice(first_names)} {random.choice(last_names)}"
+        return f_name, login_name
     return None, None
 
 # ============================================================
@@ -216,6 +227,10 @@ def get_force_join_keyboard(lang: str):
     btn_ch2 = InlineKeyboardButton("📢 Instagram TH", url="https://t.me/insagramth")
     btn_verify = InlineKeyboardButton("✅ Verify Membership", callback_data="verify_join")
     
+    object.__setattr__(btn_ch1, 'style', 'primary')
+    object.__setattr__(btn_ch2, 'style', 'primary')
+    object.__setattr__(btn_verify, 'style', 'success')
+    
     return InlineKeyboardMarkup([[btn_ch1], [btn_ch2], [btn_verify]])
 
 # ============================================================
@@ -232,6 +247,13 @@ def main_menu_keyboard(user_id: int, lang: str):
     btn_support = KeyboardButton(ln["btn_support"])
     btn_language = KeyboardButton(ln["btn_language"])
     
+    object.__setattr__(btn_balance, 'style', 'success')
+    object.__setattr__(btn_tasks, 'style', 'primary')
+    object.__setattr__(btn_withdraw, 'style', 'success')
+    object.__setattr__(btn_report, 'style', 'primary')
+    object.__setattr__(btn_support, 'style', 'primary')
+    object.__setattr__(btn_language, 'style', 'primary')
+    
     buttons = [
         [btn_balance, btn_tasks],
         [btn_withdraw, btn_report],
@@ -240,6 +262,7 @@ def main_menu_keyboard(user_id: int, lang: str):
     
     if user_id == ADMIN_ID:
         btn_admin = KeyboardButton(ln["btn_admin"])
+        object.__setattr__(btn_admin, 'style', 'danger')
         buttons.append([btn_admin])
         
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
@@ -255,7 +278,7 @@ USER_STATE = {}
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    u_data = get_or_create_user(user.id, user.username or "")
+    u_data = await get_or_create_user(user.id, user.username or "")
     lang = u_data.get("language", "bn")
     
     if not await is_user_joined_all(context.bot, user.id):
@@ -272,10 +295,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    text = update.message.text.strip() if update.message.text else ""
+    text = update.message.text.strip()
     
-    db_data = _load()
-    user_profile = get_or_create_user(user_id, update.effective_user.username or "")
+    db_data = await load_db()
+    user_profile = await get_or_create_user(user_id, update.effective_user.username or "")
     lang = user_profile.get("language", "bn")
     ln = LANGUAGES[lang]
 
@@ -292,23 +315,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # --------------------------------------------------------
     if user_id == ADMIN_ID and USER_STATE.get(user_id, {}).get("step") == "admin_change_password":
         USER_STATE.pop(user_id, None)
-        with _lock:
-            data = _load()
-            data["task_password"] = text
-            _save(data)
+        await save_db_path("task_password", text)
         await update.message.reply_text(f"🔐 সফলভাবে নতুন পাসওয়ার্ড সেভ করা হয়েছে!\nবর্তমান পাসওয়ার্ড: `{text}`", parse_mode="Markdown", reply_markup=main_menu_keyboard(user_id, lang))
         return
 
     if user_id == ADMIN_ID and USER_STATE.get(user_id, {}).get("step") == "admin_save_username":
         USER_STATE.pop(user_id, None)
         raw_names = text.replace(",", " ").split()
-        with _lock:
-            data = _load()
-            for r_name in raw_names:
-                if r_name not in data["saved_usernames"]:
-                    data["saved_usernames"].append(r_name)
-            _save(data)
-        await update.message.reply_text(f"✅ সফলভাবে ইউজারনেম সেভ করা হয়েছে!\nবর্তমানে মোট সেভ করা ইউজারনেম: {len(data['saved_usernames'])} টি।", reply_markup=main_menu_keyboard(user_id, lang))
+        current_saved = db_data.get("saved_usernames", [])
+        if not isinstance(current_saved, list):
+            current_saved = []
+        for r_name in raw_names:
+            if r_name not in current_saved:
+                current_saved.append(r_name)
+        await save_db_path("saved_usernames", current_saved)
+        await update.message.reply_text(f"✅ সফলভাবে ইউজারনেম সেভ করা হয়েছে!\nবর্তমানে মোট সেভ করা ইউজারনেম: {len(current_saved)} টি।", reply_markup=main_menu_keyboard(user_id, lang))
         return
 
     if user_id == ADMIN_ID and USER_STATE.get(user_id, {}).get("step") == "admin_task_name":
@@ -334,13 +355,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         btn_c_work = InlineKeyboardButton("🍪 Cookies Work", callback_data="adm_t_type:cookies")
         btn_2_work = InlineKeyboardButton("🛡️ 2FA Work", callback_data="adm_t_type:2fa")
         
+        object.__setattr__(btn_c_work, 'style', 'success')
+        object.__setattr__(btn_2_work, 'style', 'primary')
+        
         kb = InlineKeyboardMarkup([[btn_c_work], [btn_2_work]])
         await update.message.reply_text("🎯 এটি কি ধরনের কাজ হবে নিচে থেকে সিলেক্ট করুন:", reply_markup=kb)
         return
 
     if user_id == ADMIN_ID and USER_STATE.get(user_id, {}).get("step") == "broadcast_msg":
         USER_STATE.pop(user_id, None)
-        all_users = db_data["users"].keys()
+        all_users = db_data.get("users", {}).keys()
         count = 0
         for u in all_users:
             try:
@@ -354,25 +378,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id == ADMIN_ID and USER_STATE.get(user_id, {}).get("step") == "add_money_uid":
         USER_STATE[user_id]["target_uid"] = text
         USER_STATE[user_id]["step"] = "add_money_amount"
-        await update.message.reply_text("👤 Send the target User identification (UID) number:")
+        await update.message.reply_text("💵 Enter Amount to Add:")
         return
         
     if user_id == ADMIN_ID and USER_STATE.get(user_id, {}).get("step") == "add_money_amount":
         try:
             amount = float(text)
             target = USER_STATE[user_id]["target_uid"]
-            with _lock:
-                data = _load()
-                if target in data["users"]:
-                    data["users"][target]["balance"] = round(data["users"][target]["balance"] + amount, 2)
-                    _save(data)
-                    await update.message.reply_text(f"✅ Added ৳{amount} to UID {target}")
-                    try:
-                        await context.bot.send_message(chat_id=int(target), text=f"💰 Admin added ৳{amount} to your balance!")
-                    except:
-                        pass
-                else:
-                    await update.message.reply_text("❌ User not found.")
+            if target in db_data.get("users", {}):
+                new_bal = round(db_data["users"][target].get("balance", 0.0) + amount, 2)
+                await save_db_path(f"users/{target}/balance", new_bal)
+                await update.message.reply_text(f"✅ Added ৳{amount} to UID {target}")
+                try:
+                    await context.bot.send_message(chat_id=int(target), text=f"💰 Admin added ৳{amount} to your balance!")
+                except:
+                    pass
+            else:
+                await update.message.reply_text("❌ User not found.")
         except:
             await update.message.reply_text("❌ Invalid Amount.")
         USER_STATE.pop(user_id, None)
@@ -413,6 +435,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             btn_cnf = KeyboardButton(ln["btn_confirm"])
             btn_cnc = KeyboardButton(ln["btn_cancel"])
+            object.__setattr__(btn_cnf, 'style', 'success')
+            object.__setattr__(btn_cnc, 'style', 'danger')
             
             kb = ReplyKeyboardMarkup([[btn_cnf, btn_cnc]], resize_keyboard=True)
             USER_STATE[user_id]["step"] = "withdraw_confirm"
@@ -426,22 +450,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if text == ln["btn_confirm"]:
             state = USER_STATE[user_id]
             w_id = str(uuid.uuid4())[:8]
-            with _lock:
-                data = _load()
-                data["withdrawals"][w_id] = {
-                    "w_id": w_id, "user_id": user_id, "username": user_profile["username"],
-                    "number": state["number"], "method": state["method"], "amount": state["amt"], "status": "pending"
-                }
-                _save(data)
+            
+            withdraw_data = {
+                "w_id": w_id, "user_id": user_id, "username": user_profile.get("username", ""),
+                "number": state["number"], "method": state["method"], "amount": state["amt"], "status": "pending"
+            }
+            await save_db_path(f"withdrawals/{w_id}", withdraw_data)
+            
             await update.message.reply_text(ln["pay_pending"], reply_markup=main_menu_keyboard(user_id, lang))
             
             btn_w_ap = InlineKeyboardButton("✅ APPROVE", callback_data=f"w_app:{w_id}")
             btn_w_rj = InlineKeyboardButton("❌ REJECT", callback_data=f"w_rej:{w_id}")
+            object.__setattr__(btn_w_ap, 'style', 'success')
+            object.__setattr__(btn_w_rj, 'style', 'danger')
             
             admin_kb = InlineKeyboardMarkup([[btn_w_ap, btn_w_rj]])
             await context.bot.send_message(
                 chat_id=ADMIN_ID,
-                text=f"💸 New Payment Request\n\n👤 User: @{user_profile['username']}\n🆔 UID: {user_id}\n📱 Number: {state['number']}\n💳 Method: {state['method']}\n💰 Amount: {state['amt']} ৳",
+                text=f"💸 New Payment Request\n\n👤 User: @{user_profile.get('username','')}\n🆔 UID: {user_id}\n📱 Number: {state['number']}\n💳 Method: {state['method']}\n💰 Amount: {state['amt']} ৳",
                 reply_markup=admin_kb
             )
         else:
@@ -460,6 +486,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         btn_reg = KeyboardButton(ln["btn_acc_reg"])
         btn_cnc = KeyboardButton(ln["btn_cancel"])
+        object.__setattr__(btn_reg, 'style', 'success')
+        object.__setattr__(btn_cnc, 'style', 'danger')
         
         kb = ReplyKeyboardMarkup([[btn_reg], [btn_cnc]], resize_keyboard=True)
         await update.message.reply_text(ln["cookies_rec"], reply_markup=kb)
@@ -470,6 +498,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if state and (state.get("step") == "cookies_submitted" or state.get("step") == "2fa_verify"):
             btn_sub = KeyboardButton(ln["btn_subbed"])
             btn_cnc = KeyboardButton(ln["btn_cancel"])
+            object.__setattr__(btn_sub, 'style', 'success')
+            object.__setattr__(btn_cnc, 'style', 'danger')
             
             kb = ReplyKeyboardMarkup([[btn_sub], [btn_cnc]], resize_keyboard=True)
             await update.message.reply_text(ln["invite_check"], reply_markup=kb)
@@ -487,17 +517,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(f"Dynamic 2FA Report\nTask Name: {state.get('t_name','')}\nUsername: {state['login']}\nPassword: {state['pass']}\n2FA Key: {state.get('secret','')}")
                 
-            with _lock:
-                d = _load()
-                d["submissions"][sub_id] = {
-                    "sub_id": sub_id, "user_id": user_id, "username": user_profile["username"],
-                    "task_type": "2fa", "task_id": state.get("task_id"), "login": state['login'], "pass": state['pass'], "status": "pending"
-                }
-                d["users"][str(user_id)]["review_count"] += 1
-                _save(d)
+            submission_entry = {
+                "sub_id": sub_id, "user_id": user_id, "username": user_profile.get("username", ""),
+                "task_type": "2fa", "task_id": state.get("task_id"), "login": state['login'], "pass": state['pass'], "status": "pending"
+            }
+            await save_db_path(f"submissions/{sub_id}", submission_entry)
+            
+            new_review_count = user_profile.get("review_count", 0) + 1
+            await save_db_path(f"users/{user_id}/review_count", new_review_count)
                 
             with open(file_path, "rb") as f:
-                await context.bot.send_document(chat_id=ADMIN_ID, document=f, caption=f"实时 Dynamic 2FA Task\nUser: @{user_profile['username']}\nUID: {user_id}")
+                await context.bot.send_document(chat_id=ADMIN_ID, document=f, caption=f"实时 Dynamic 2FA Task\nUser: @{user_profile.get('username','')}\nUID: {user_id}")
             os.remove(file_path)
             
             await update.message.reply_text(ln["report_received"], reply_markup=main_menu_keyboard(user_id, lang))
@@ -509,16 +539,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             file_path = f"submission_{sub_id}.txt"
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(f"Task Name: {state['t_name']}\nUsername: {state['login']}\nPassword: {state['pass']}\nCookies: {state['cookies_data']}")
-            with _lock:
-                data = _load()
-                data["submissions"][sub_id] = {
-                    "sub_id": sub_id, "user_id": user_id, "username": user_profile["username"],
-                    "task_type": "cookies", "task_id": data.get("task_id"), "login": state['login'], "pass": state['pass'], "status": "pending"
-                }
-                data["users"][str(user_id)]["review_count"] += 1
-                _save(data)
+            
+            submission_entry = {
+                "sub_id": sub_id, "user_id": user_id, "username": user_profile.get("username", ""),
+                "task_type": "cookies", "task_id": state.get("task_id"), "login": state['login'], "pass": state['pass'], "status": "pending"
+            }
+            await save_db_path(f"submissions/{sub_id}", submission_entry)
+            
+            new_review_count = user_profile.get("review_count", 0) + 1
+            await save_db_path(f"users/{user_id}/review_count", new_review_count)
+
             with open(file_path, "rb") as f:
-                await context.bot.send_document(chat_id=ADMIN_ID, document=f, caption=f"🍪 Dynamic Cookies Task Submission\nUser: @{user_profile['username']}\nUID: {user_id}\nSub ID: {sub_id}")
+                await context.bot.send_document(chat_id=ADMIN_ID, document=f, caption=f"🍪 Dynamic Cookies Task Submission\nUser: @{user_profile.get('username','')}\nUID: {user_id}\nSub ID: {sub_id}")
             os.remove(file_path)
             await update.message.reply_text(ln["thanks_msg"], reply_markup=main_menu_keyboard(user_id, lang))
             USER_STATE.pop(user_id, None)
@@ -545,11 +577,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         btn_reg = KeyboardButton(ln["btn_acc_reg"])
         btn_cnc = KeyboardButton(ln["btn_cancel"])
+        object.__setattr__(btn_reg, 'style', 'success')
+        object.__setattr__(btn_cnc, 'style', 'danger')
         reg_kb = ReplyKeyboardMarkup([[btn_reg], [btn_cnc]], resize_keyboard=True)
         
         await update.message.reply_text("👉 2FA Key Received. Now verify and submit using the panel below.", reply_markup=reg_kb)
 
         btn_ref = InlineKeyboardButton("🔄 Refresh", callback_data="refresh_2fa_code")
+        object.__setattr__(btn_ref, 'style', 'primary')
         inline_kb = InlineKeyboardMarkup([[btn_ref]])
         
         msg = await update.message.reply_text(
@@ -567,7 +602,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # --- MENU NAVIGATION ---
     if text in ["💳 BALANCE", "💳 ব্যালেন্স"]:
-        await update.message.reply_text(ln["balance_msg"].format(bal=user_profile['balance']), reply_markup=main_menu_keyboard(user_id, lang))
+        await update.message.reply_text(ln["balance_msg"].format(bal=user_profile.get('balance', 0.0)), reply_markup=main_menu_keyboard(user_id, lang))
         return
 
     if text in ["📊 YOUR REPORT", "📊 আপনার রিপোর্ট"]:
@@ -580,6 +615,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # --- SUPPORT BUTTON HANDLER ---
     if text in ["ℹ️ SUPPORT", "ℹ️ সাপোর্ট (SUPPORT)"]:
         btn_adm = InlineKeyboardButton("👤 Admin", url="https://t.me/adim_shuvo")
+        object.__setattr__(btn_adm, 'style', 'primary')
         inline_kb = InlineKeyboardMarkup([[btn_adm]])
         await update.message.reply_text(ln["support_msg"], reply_markup=inline_kb)
         return
@@ -587,6 +623,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text in ["🌐 LANGUAGE", "🌐 ভাষা (LANGUAGE)"]:
         btn_bn = InlineKeyboardButton("🇧🇩 বাংলা", callback_data="lang_bn")
         btn_en = InlineKeyboardButton("🇬🇧 English", callback_data="lang_en")
+        object.__setattr__(btn_bn, 'style', 'success')
+        object.__setattr__(btn_en, 'style', 'primary')
         
         kb = InlineKeyboardMarkup([[btn_bn, btn_en]])
         await update.message.reply_text(ln["select_lang"], reply_markup=kb)
@@ -594,21 +632,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if text in ["📋 TASKS", "📋 কাজ (TASKS)"]:
         task_list = []
-        if db_data["visibility"].get("instagram_task", True) or user_id == ADMIN_ID:
+        visibility = db_data.get("visibility", {"instagram_task": True, "facebook_task": True})
+        if visibility.get("instagram_task", True) or user_id == ADMIN_ID:
             btn_ig = KeyboardButton("🎯 Instagram Task" if lang == "en" else "🎯 ইনস্টাগ্রাম কাজ")
+            object.__setattr__(btn_ig, 'style', 'primary')
             task_list.append([btn_ig])
-        if db_data["visibility"].get("facebook_task", True) or user_id == ADMIN_ID:
+        if visibility.get("facebook_task", True) or user_id == ADMIN_ID:
             btn_fb = KeyboardButton("🎯 Facebook Task" if lang == "en" else "🎯 ফেসবুক কাজ")
+            object.__setattr__(btn_fb, 'style', 'primary')
             task_list.append([btn_fb])
             
         btn_bck = KeyboardButton(ln["btn_back"])
+        object.__setattr__(btn_bck, 'style', 'danger')
         task_list.append([btn_bck])
         await update.message.reply_text(ln["select_cat"], reply_markup=ReplyKeyboardMarkup(task_list, resize_keyboard=True))
         return
 
     if text in ["🎯 Instagram Task", "🎯 ইনস্টাগ্রাম কাজ", "🎯 Facebook Task", "🎯 ফেসবুক কাজ"]:
         cat_key = "instagram" if "Insta" in text or "ইনস্টা" in text else "facebook"
-        if not db_data["visibility"].get(f"{cat_key}_task", True) and user_id != ADMIN_ID:
+        visibility = db_data.get("visibility", {"instagram_task": True, "facebook_task": True})
+        if not visibility.get(f"{cat_key}_task", True) and user_id != ADMIN_ID:
             await update.message.reply_text(ln["task_hidden"])
             return
             
@@ -620,9 +663,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         sub_tasks = []
         for t in active_tasks:
             btn_t = KeyboardButton(f"📌 {t['name']} ({t['price']} ৳)")
+            object.__setattr__(btn_t, 'style', 'success')
             sub_tasks.append([btn_t])
             
         btn_cnc = KeyboardButton(ln["btn_cancel"])
+        object.__setattr__(btn_cnc, 'style', 'danger')
         sub_tasks.append([btn_cnc])
         await update.message.reply_text(ln["choose_type"], reply_markup=ReplyKeyboardMarkup(sub_tasks, resize_keyboard=True))
         return
@@ -633,17 +678,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         target_task = None
         for tid, t in all_tasks.items():
-            if t["name"] == clean_name:
+            if t.get("name") == clean_name:
                 target_task = t
                 break
                 
         if target_task:
             tid = target_task["id"]
-            USER_STATE[user_id] = {"task_id": tid, "task_type": target_task["type"]}
+            USER_STATE[user_id] = {"task_id": tid, "task_type": target_task.get("type", "2fa")}
             
             btn_str = KeyboardButton(ln["btn_start"])
             btn_vid = KeyboardButton(ln["btn_video"])
             btn_cnc = KeyboardButton(ln["btn_cancel"])
+            
+            object.__setattr__(btn_str, 'style', 'success')
+            object.__setattr__(btn_vid, 'style', 'primary')
+            object.__setattr__(btn_cnc, 'style', 'danger')
             
             kb = ReplyKeyboardMarkup([[btn_str], [btn_vid], [btn_cnc]], resize_keyboard=True)
             rules_msg = f"🛡️ 🌟 *{target_task['name']}*\n\n💵 Payout: ৳{target_task['price']}\n\n📝 *Rules:*\n{target_task['rules']}\n\n🚀 Tap START to continue."
@@ -657,9 +706,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text == ln["btn_start"]:
         state = USER_STATE.get(user_id)
         if state and "task_id" in state:
-            t_data = db_data["dynamic_tasks"].get(state["task_id"])
+            t_data = db_data.get("dynamic_tasks", {}).get(state["task_id"])
             if t_data:
-                f_name, login_name = generate_profile_or_get_saved()
+                f_name, login_name = await generate_profile_or_get_saved()
                 
                 if login_name is None:
                     await update.message.reply_text(ln["no_usernames_err"])
@@ -668,7 +717,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass_val = db_data.get("task_password", "shuvo9")
                 state["login"] = login_name
                 state["pass"] = pass_val
-                state["t_name"] = t_data["name"]
+                state["t_name"] = t_data.get("name", "")
                 
                 mono_msg = (
                     f"First name: `{f_name}`\n"
@@ -681,16 +730,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     state["step"] = "waiting_for_2fa"
                     btn_2fa = KeyboardButton(ln["btn_how_to_2fa"])
                     btn_cnc = KeyboardButton(ln["btn_cancel"])
+                    object.__setattr__(btn_2fa, 'style', 'primary')
+                    object.__setattr__(btn_cnc, 'style', 'danger')
                     task_2fa_kb = ReplyKeyboardMarkup([[btn_2fa], [btn_cnc]], resize_keyboard=True)
                     await update.message.reply_text(ln["send_2fa_secret"], reply_markup=task_2fa_kb)
                 else:
                     state["step"] = "waiting_for_cookies"
                     btn_cnc = KeyboardButton(ln["btn_cancel"])
+                    object.__setattr__(btn_cnc, 'style', 'danger')
                     await update.message.reply_text(ln["send_cookies"], reply_markup=ReplyKeyboardMarkup([[btn_cnc]], resize_keyboard=True))
             return
 
     if text in ["📤 WITHDRAW", "📤 টাকা তুলুন"]:
-        bal = user_profile["balance"]
+        bal = user_profile.get("balance", 0.0)
         
         if bal < 50:
             btn_fake = InlineKeyboardButton("⚠️ Insufficient Balance", callback_data="popup_error_alert")
@@ -701,6 +753,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
             
         btn_wth = InlineKeyboardButton("Withdraw", callback_data="start_withdraw")
+        object.__setattr__(btn_wth, 'style', 'success')
         inline_wb = InlineKeyboardMarkup([[btn_wth]])
         await update.message.reply_text(ln["withdraw_dash"].format(bal=bal, rec=max(0.0, bal - 5.0)), reply_markup=inline_wb)
         return
@@ -717,6 +770,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         btn_del_u = KeyboardButton("🗑️ User Delete")
         btn_pwd_t = KeyboardButton("🔐 Password Change")
         btn_back_m = KeyboardButton(ln["btn_back"])
+        
+        object.__setattr__(btn_add_t, 'style', 'success')
+        object.__setattr__(btn_del_t, 'style', 'danger')
+        object.__setattr__(btn_vis_t, 'style', 'primary')
+        object.__setattr__(btn_brd_t, 'style', 'primary')
+        object.__setattr__(btn_add_m, 'style', 'success')
+        object.__setattr__(btn_sav_u, 'style', 'success')
+        object.__setattr__(btn_all_r, 'style', 'primary')
+        object.__setattr__(btn_del_u, 'style', 'danger')
+        object.__setattr__(btn_pwd_t, 'style', 'primary')
+        object.__setattr__(btn_back_m, 'style', 'danger')
         
         kb = ReplyKeyboardMarkup([
             [btn_add_t, btn_del_t],
@@ -737,6 +801,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id == ADMIN_ID and text == "❌ Delete Task":
         btn_del_ig = InlineKeyboardButton("Instagram Tasks", callback_data="adm_del_cat:instagram")
         btn_del_fb = InlineKeyboardButton("Facebook Tasks", callback_data="adm_del_cat:facebook")
+        object.__setattr__(btn_del_ig, 'style', 'danger')
+        object.__setattr__(btn_del_fb, 'style', 'danger')
         
         kb = InlineKeyboardMarkup([[btn_del_ig, btn_del_fb]])
         await update.message.reply_text("🗑️ কোন ক্যাটাগরির কাজ ডিলিট করতে চান?", reply_markup=kb)
@@ -750,15 +816,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id == ADMIN_ID and text == "➕ Add Task":
         btn_cat_ig = InlineKeyboardButton("Instagram", callback_data="adm_cat:instagram")
         btn_cat_fb = InlineKeyboardButton("Facebook", callback_data="adm_cat:facebook")
+        object.__setattr__(btn_cat_ig, 'style', 'success')
+        object.__setattr__(btn_cat_fb, 'style', 'success')
         
         kb = InlineKeyboardMarkup([[btn_cat_ig, btn_cat_fb]])
         await update.message.reply_text("📁 কোন ক্যাটাগরিতে কাজ যুক্ত করতে চান?", reply_markup=kb)
         return
 
     if user_id == ADMIN_ID and text == "👁️ Task Hide/Show":
-        v = db_data["visibility"]
+        v = db_data.get("visibility", {"instagram_task": True, "facebook_task": True})
         btn_h_ig = InlineKeyboardButton(f"IG Cat [{'ON' if v.get('instagram_task',True) else 'OFF'}]", callback_data="h_ig_m")
         btn_h_fb = InlineKeyboardButton(f"FB Cat [{'ON' if v.get('facebook_task',True) else 'OFF'}]", callback_data="h_fb_m")
+        object.__setattr__(btn_h_ig, 'style', 'primary')
+        object.__setattr__(btn_h_fb, 'style', 'primary')
         
         kb = InlineKeyboardMarkup([[btn_h_ig, btn_h_fb]])
         await update.message.reply_text("👁️ Click to Toggle Category Visibility:", reply_markup=kb)
@@ -777,6 +847,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id == ADMIN_ID and text == "🗑️ User Delete":
         total_saved_usernames = len(db_data.get("saved_usernames", []))
         btn_conf_del = InlineKeyboardButton("⚠️ ডিলিট নিশ্চিত করুন", callback_data="adm_confirm_delete_all_saved_usernames")
+        object.__setattr__(btn_conf_del, 'style', 'danger')
         
         kb = InlineKeyboardMarkup([[btn_conf_del]])
         await update.message.reply_text(
@@ -787,16 +858,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if user_id == ADMIN_ID and text == "🗂️ All Report":
-        pending_subs = [s for s in db_data["submissions"].values() if s["status"] == "pending"]
+        pending_subs = [s for s in db_data.get("submissions", {}).values() if s.get("status") == "pending"]
         if not pending_subs:
             await update.message.reply_text("✅ No pending item reports.")
             return
         for s in pending_subs:
             btn_app = InlineKeyboardButton("Approve", callback_data=f"rep_app:{s['sub_id']}")
             btn_rej = InlineKeyboardButton("Reject", callback_data=f"rep_rej:{s['sub_id']}")
+            object.__setattr__(btn_app, 'style', 'success')
+            object.__setattr__(btn_rej, 'style', 'danger')
             
             inline_ap = InlineKeyboardMarkup([[btn_app, btn_rej]])
-            await update.message.reply_text(f"User ID: {s['user_id']}\nType: {s['task_type']}\nLogin: {s['login']}\nStatus: Pending", reply_markup=inline_ap)
+            await update.message.reply_text(f"User ID: {s['user_id']}\nType: {s.get('task_type','')}\nLogin: {s.get('login','')}\nStatus: Pending", reply_markup=inline_ap)
         return
 
     if text in [ln["btn_cancel"], ln["btn_back"], "cancel", "❌ cancel", "🔙 BACK"]:
@@ -819,8 +892,8 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
     data = query.data
     
-    db_data = _load()
-    user_profile = get_or_create_user(user_id, query.from_user.username or "")
+    db_data = await load_db()
+    user_profile = await get_or_create_user(user_id, query.from_user.username or "")
     lang = user_profile.get("language", "bn")
     ln = LANGUAGES[lang]
 
@@ -859,6 +932,7 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 remaining = 30 - (int(datetime.datetime.now().timestamp()) % 30)
                 
                 btn_ref = InlineKeyboardButton("🔄 Refresh", callback_data="refresh_2fa_code")
+                object.__setattr__(btn_ref, 'style', 'primary')
                 inline_kb = InlineKeyboardMarkup([[btn_ref]])
                 
                 await query.edit_message_text(
@@ -893,6 +967,7 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         buttons = []
         for t in active_tasks:
             btn_t_del = InlineKeyboardButton(f"🗑️ {t['name']} ({t['price']}৳)", callback_data=f"adm_do_del:{t['id']}")
+            object.__setattr__(btn_t_del, 'style', 'danger')
             buttons.append([btn_t_del])
             
         await query.message.reply_text("👇 নিচে থেকে যে টাস্কটি ডিলিট করতে চান সেটির উপর চাপুন:", reply_markup=InlineKeyboardMarkup(buttons))
@@ -902,14 +977,12 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data.startswith("adm_do_del:"):
         task_id = data.split(":")[1]
-        with _lock:
-            d = _load()
-            if task_id in d.get("dynamic_tasks", {}):
-                removed_task = d["dynamic_tasks"].pop(task_id)
-                _save(d)
-                await query.message.reply_text(f"✅ সফলভাবে টাস্কটি ডিলিট করা হয়েছে!\n🗑️ ডিলিট হওয়া টাস্ক: {removed_task['name']}")
-            else:
-                await query.message.reply_text("❌ দুঃখিত! টাস্কটি খুঁজে পাওয়া যায়নি অথবা অলরেডি ডিলিট হয়ে গেছে।")
+        if task_id in db_data.get("dynamic_tasks", {}):
+            removed_task = db_data["dynamic_tasks"][task_id]
+            await save_db_path(f"dynamic_tasks/{task_id}", None) # Firebase removes keys on None
+            await query.message.reply_text(f"✅ সফলভাবে টাস্কটি ডিলিট করা হয়েছে!\n🗑️ ডিলিট হওয়া টাস্ক: {removed_task.get('name','')}")
+        else:
+            await query.message.reply_text("❌ দুঃখিত! টাস্কটি খুঁজে পাওয়া যায়নি অথবা অলরেডি ডিলিট হয়ে গেছে।")
         try: await query.delete_message()
         except: pass
         return
@@ -923,11 +996,7 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "id": t_id, "category": state["category"], "name": state["task_name"],
                 "price": state.get("task_price", 0.0), "rules": state.get("task_rules", ""), "type": t_type
             }
-            with _lock:
-                d = _load()
-                if "dynamic_tasks" not in d: d["dynamic_tasks"] = {}
-                d["dynamic_tasks"][t_id] = new_task
-                _save(d)
+            await save_db_path(f"dynamic_tasks/{t_id}", new_task)
                 
             USER_STATE.pop(user_id, None)
             await query.message.reply_text(f"✅ সফলভাবে নতুন টাস্ক সিস্টেমে সেভ করা হয়েছে!\n\n📌 নাম: {new_task['name']}\n💵 পেমেন্ট: {new_task['price']} ৳\n🎯 টাইপ: {new_task['type'].upper()}")
@@ -937,23 +1006,22 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data.startswith("lang_"):
         new_lang = "bn" if data == "lang_bn" else "en"
-        with _lock:
-            d = _load()
-            d["users"][str(user_id)]["language"] = new_lang
-            _save(d)
+        await save_db_path(f"users/{user_id}/language", new_lang)
         await query.message.reply_text(LANGUAGES[new_lang]["lang_changed"], reply_markup=main_menu_keyboard(user_id, new_lang))
         try: await query.delete_message()
         except: pass
         return
 
     if data == "start_withdraw":
-        if user_profile["balance"] < 50:
+        if user_profile.get("balance", 0.0) < 50:
             await query.answer(ln["withdraw_min_err"], show_alert=True)
             return
         USER_STATE[user_id] = {"step": "withdraw_method"}
         
         btn_bks = InlineKeyboardButton("bKash", callback_data="w_meth:bKash")
         btn_ngd = InlineKeyboardButton("Nagad", callback_data="w_meth:Nagad")
+        object.__setattr__(btn_bks, 'style', 'success')
+        object.__setattr__(btn_ngd, 'style', 'success')
         
         kb = InlineKeyboardMarkup([[btn_bks, btn_ngd]])
         await query.edit_message_text(LANGUAGES[lang]["select_meth"], reply_markup=kb)
@@ -965,6 +1033,7 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         USER_STATE[user_id]["step"] = "withdraw_num"
         
         btn_cnc = KeyboardButton(LANGUAGES[lang]["btn_cancel"])
+        object.__setattr__(btn_cnc, 'style', 'danger')
         
         await context.bot.send_message(chat_id=user_id, text=LANGUAGES[lang]["send_num"].format(method=method), reply_markup=ReplyKeyboardMarkup([[btn_cnc]], resize_keyboard=True))
         try: await query.delete_message()
@@ -975,10 +1044,7 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data == "adm_confirm_delete_all_saved_usernames":
-        with _lock:
-            d = _load()
-            d["saved_usernames"] = []
-            _save(d)
+        await save_db_path("saved_usernames", [])
         await query.message.reply_text("💥 সফলভাবে বটের সকল সেভ করা ইউজারনেম ডাটা ডিলিট করে দেওয়া হয়েছে!", reply_markup=main_menu_keyboard(user_id, lang))
         try: await query.delete_message()
         except: pass
@@ -987,14 +1053,16 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data.startswith("h_"):
         key_map = {"h_ig_m": "instagram_task", "h_fb_m": "facebook_task"}
         target_key = key_map[data]
-        with _lock:
-            d = _load()
-            d["visibility"][target_key] = not d["visibility"].get(target_key, True)
-            _save(d)
-        v = d["visibility"]
+        v = db_data.get("visibility", {"instagram_task": True, "facebook_task": True})
+        new_val = not v.get(target_key, True)
+        
+        await save_db_path(f"visibility/{target_key}", new_val)
+        v[target_key] = new_val
         
         btn_m_ig = InlineKeyboardButton(f"IG Master [{'ON' if v.get('instagram_task',True) else 'OFF'}]", callback_data="h_ig_m")
         btn_m_fb = InlineKeyboardButton(f"FB Master [{'ON' if v.get('facebook_task',True) else 'OFF'}]", callback_data="h_fb_m")
+        object.__setattr__(btn_m_ig, 'style', 'primary')
+        object.__setattr__(btn_m_fb, 'style', 'primary')
         
         kb = InlineKeyboardMarkup([[btn_m_ig, btn_m_fb]])
         await query.edit_message_text("👁️ Category Visibility toggled:", reply_markup=kb)
@@ -1003,52 +1071,64 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data.startswith("w_app:") or data.startswith("w_rej:"):
         w_id = data.split(":")[1]
         is_approve = data.startswith("w_app:")
-        with _lock:
-            d = _load()
-            w_rec = d["withdrawals"].get(w_id)
-            if w_rec and w_rec["status"] == "pending":
-                if is_approve:
-                    w_rec["status"] = "approved"
-                    d["users"][str(w_rec["user_id"])]["balance"] = round(d["users"][str(w_rec["user_id"])]["balance"] - w_rec["amount"], 2)
-                    msg = f"✅ Approved ৳{w_rec['amount']}"
-                    u_msg = "✅ Your withdrawal request has been verified and approved by the admin."
-                else:
-                    w_rec["status"] = "rejected"
-                    msg = "❌ Rejected"
-                    u_msg = "❌ Your withdrawal request has been rejected."
-                _save(d)
-                await query.edit_message_text(msg)
-                try: await context.bot.send_message(chat_id=w_rec["user_id"], text=u_msg)
-                except: pass
+        
+        w_rec = db_data.get("withdrawals", {}).get(w_id)
+        if w_rec and w_rec.get("status") == "pending":
+            target_uid = str(w_rec["user_id"])
+            if is_approve:
+                await save_db_path(f"withdrawals/{w_id}/status", "approved")
+                current_bal = db_data.get("users", {}).get(target_uid, {}).get("balance", 0.0)
+                await save_db_path(f"users/{target_uid}/balance", round(current_bal - w_rec["amount"], 2))
+                msg = f"✅ Approved ৳{w_rec['amount']}"
+                u_msg = "✅ Your withdrawal request has been verified and approved by the admin."
+            else:
+                await save_db_path(f"withdrawals/{w_id}/status", "rejected")
+                msg = "❌ Rejected"
+                u_msg = "❌ Your withdrawal request has been rejected."
+                
+            await query.edit_message_text(msg)
+            try: await context.bot.send_message(chat_id=w_rec["user_id"], text=u_msg)
+            except: pass
         return
 
     if data.startswith("rep_app:") or data.startswith("rep_rej:"):
         sub_id = data.split(":")[1]
         is_approve = data.startswith("rep_app:")
-        with _lock:
-            d = _load()
-            s_rec = d["submissions"].get(sub_id)
-            if s_rec and s_rec["status"] == "pending":
-                u_id_str = str(s_rec["user_id"])
-                if is_approve:
-                    s_rec["status"] = "approved"
-                    t_info = d.get("dynamic_tasks", {}).get(s_rec.get("task_id"), {})
-                    p_add = t_info.get("price", 3.5)
-                    d["users"][u_id_str]["balance"] = round(d["users"][u_id_str]["balance"] + p_add, 2)
-                    d["users"][u_id_str]["success_count"] += 1
-                    d["users"][u_id_str]["review_count"] = max(0, d["users"][u_id_str]["review_count"] - 1)
-                    msg = "✅ Approved submission."
-                    u_msg = f"✅ Report approved, +৳{p_add}"
-                else:
-                    s_rec["status"] = "rejected"
-                    d["users"][u_id_str]["rejected_count"] += 1
-                    d["users"][u_id_str]["review_count"] = max(0, d["users"][u_id_str]["review_count"] - 1)
-                    msg = "❌ Rejected submission."
-                    u_msg = "❌ Your Report Has Been Rejected 🥹"
-                _save(d)
-                await query.edit_message_text(msg)
-                try: await context.bot.send_message(chat_id=s_rec["user_id"], text=u_msg)
-                except: pass
+        
+        s_rec = db_data.get("submissions", {}).get(sub_id)
+        if s_rec and s_rec.get("status") == "pending":
+            u_id_str = str(s_rec["user_id"])
+            target_user = db_data.get("users", {}).get(u_id_str, {})
+            
+            if is_approve:
+                await save_db_path(f"submissions/{sub_id}/status", "approved")
+                t_info = db_data.get("dynamic_tasks", {}).get(s_rec.get("task_id", ""), {})
+                p_add = t_info.get("price", 3.5)
+                
+                new_bal = round(target_user.get("balance", 0.0) + p_add, 2)
+                new_success = target_user.get("success_count", 0) + 1
+                new_review = max(0, target_user.get("review_count", 0) - 1)
+                
+                await save_db_path(f"users/{u_id_str}/balance", new_bal)
+                await save_db_path(f"users/{u_id_str}/success_count", new_success)
+                await save_db_path(f"users/{u_id_str}/review_count", new_review)
+                
+                msg = "✅ Approved submission."
+                u_msg = f"✅ Report approved, +৳{p_add}"
+            else:
+                await save_db_path(f"submissions/{sub_id}/status", "rejected")
+                new_rejected = target_user.get("rejected_count", 0) + 1
+                new_review = max(0, target_user.get("review_count", 0) - 1)
+                
+                await save_db_path(f"users/{u_id_str}/rejected_count", new_rejected)
+                await save_db_path(f"users/{u_id_str}/review_count", new_review)
+                
+                msg = "❌ Rejected submission."
+                u_msg = "❌ Your Report Has Been Rejected 🥹"
+                
+            await query.edit_message_text(msg)
+            try: await context.bot.send_message(chat_id=s_rec["user_id"], text=u_msg)
+            except: pass
 
 # ============================================================
 # MAIN EXECUTION
@@ -1057,9 +1137,9 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(MessageHandler(filters.TEXT, handle_message))
     app.add_handler(CallbackQueryHandler(callback_query))
-    logger.info("Bot properly initialized and running successfully.")
+    logger.info("Bot fully updated with Firebase Realtime Database integration.")
     app.run_polling()
 
 if __name__ == "__main__":
