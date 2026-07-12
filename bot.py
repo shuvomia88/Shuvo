@@ -39,6 +39,19 @@ REQUIRED_CHANNELS = ["@range_channele", "@insagramth"]
 ADDING_TASK_NAME = {}  # কে task name যোগ করতে চায় track করতে
 _lock = threading.Lock()
 
+def _style(btn, style_name: str):
+    """
+    কিছু বাটনে (রঙিন UI hint-এর জন্য) 'style' নামে একটা কাস্টম attribute
+    বসানোর চেষ্টা করা হয়। নতুন python-telegram-bot ভার্সনে Keyboard/
+    InlineKeyboardButton ক্লাস __slots__ ব্যবহার করে বলে সরাসরি নতুন
+    attribute বসানো সবসময় সম্ভব হয় না — এই ফাংশন চেষ্টা করে, ব্যর্থ হলে
+    নিঃশব্দে স্কিপ করে (বাটন ঠিকই কাজ করবে, শুধু রঙের hint-টা যোগ হবে না)।
+    """
+    try:
+        object.__setattr__(btn, 'style', style_name)
+    except Exception:
+        pass
+
 # ============================================================
 # FIREBASE REALTIME DATABASE (সব ডেটা এখানেই স্থায়ীভাবে সেভ হবে)
 # Render-এ ডিস্ক ephemeral, তাই local JSON file এর বদলে Firebase
@@ -307,9 +320,9 @@ def get_force_join_keyboard(lang: str):
     btn_ch2 = InlineKeyboardButton("📢 Instagram TH", url="https://t.me/insagramth")
     btn_verify = InlineKeyboardButton("✅ Verify Membership", callback_data="verify_join")
     
-    object.__setattr__(btn_ch1, 'style', 'primary')
-    object.__setattr__(btn_ch2, 'style', 'primary')
-    object.__setattr__(btn_verify, 'style', 'success')
+    _style(btn_ch1, 'primary')
+    _style(btn_ch2, 'primary')
+    _style(btn_verify, 'success')
     
     return InlineKeyboardMarkup([[btn_ch1], [btn_ch2], [btn_verify]])
 
@@ -327,12 +340,12 @@ def main_menu_keyboard(user_id: int, lang: str):
     btn_support = KeyboardButton(ln["btn_support"])
     btn_language = KeyboardButton(ln["btn_language"])
     
-    object.__setattr__(btn_balance, 'style', 'success')
-    object.__setattr__(btn_tasks, 'style', 'primary')
-    object.__setattr__(btn_withdraw, 'style', 'success')
-    object.__setattr__(btn_report, 'style', 'primary')
-    object.__setattr__(btn_support, 'style', 'primary')
-    object.__setattr__(btn_language, 'style', 'primary')
+    _style(btn_balance, 'success')
+    _style(btn_tasks, 'primary')
+    _style(btn_withdraw, 'success')
+    _style(btn_report, 'primary')
+    _style(btn_support, 'primary')
+    _style(btn_language, 'primary')
     
     buttons = [
         [btn_balance, btn_tasks],
@@ -342,7 +355,7 @@ def main_menu_keyboard(user_id: int, lang: str):
     
     if user_id == ADMIN_ID:
         btn_admin = KeyboardButton(ln["btn_admin"])
-        object.__setattr__(btn_admin, 'style', 'danger')
+        _style(btn_admin, 'danger')
         buttons.append([btn_admin])
         
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
@@ -445,9 +458,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         btn_fb = InlineKeyboardButton("🟩 Facebook", callback_data="adm_cat:facebook:")
         btn_cancel = InlineKeyboardButton("❌ Cancel", callback_data="cancel_add_task")
         
-        object.__setattr__(btn_ig, 'style', 'primary')
-        object.__setattr__(btn_fb, 'style', 'success')
-        object.__setattr__(btn_cancel, 'style', 'danger')
+        _style(btn_ig, 'primary')
+        _style(btn_fb, 'success')
+        _style(btn_cancel, 'danger')
         
         kb = InlineKeyboardMarkup([[btn_ig, btn_fb], [btn_cancel]])
         await update.message.reply_text(f"📌 বাটন নাম: {button_name}\n\nকোন ক্যাটাগরিতে যুক্ত করবেন?", reply_markup=kb)
@@ -485,8 +498,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         btn_c_work = InlineKeyboardButton("🍪 Cookies Work", callback_data="adm_t_type:cookies")
         btn_2_work = InlineKeyboardButton("🛡️ 2FA Work", callback_data="adm_t_type:2fa")
         
-        object.__setattr__(btn_c_work, 'style', 'success')
-        object.__setattr__(btn_2_work, 'style', 'primary')
+        _style(btn_c_work, 'success')
+        _style(btn_2_work, 'primary')
         
         kb = InlineKeyboardMarkup([[btn_c_work], [btn_2_work]])
         await update.message.reply_text("🎯 এটি কি ধরনের কাজ হবে নিচে থেকে সিলেক্ট করুন:", reply_markup=kb)
@@ -567,8 +580,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             btn_cnf = KeyboardButton(ln["btn_confirm"])
             btn_cnc = KeyboardButton(ln["btn_cancel"])
-            object.__setattr__(btn_cnf, 'style', 'success')
-            object.__setattr__(btn_cnc, 'style', 'danger')
+            _style(btn_cnf, 'success')
+            _style(btn_cnc, 'danger')
             
             kb = ReplyKeyboardMarkup([[btn_cnf, btn_cnc]], resize_keyboard=True)
             USER_STATE[user_id]["step"] = "withdraw_confirm"
@@ -593,8 +606,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             btn_w_ap = InlineKeyboardButton("✅ APPROVE", callback_data=f"w_app:{w_id}")
             btn_w_rj = InlineKeyboardButton("❌ REJECT", callback_data=f"w_rej:{w_id}")
-            object.__setattr__(btn_w_ap, 'style', 'success')
-            object.__setattr__(btn_w_rj, 'style', 'danger')
+            _style(btn_w_ap, 'success')
+            _style(btn_w_rj, 'danger')
             
             admin_kb = InlineKeyboardMarkup([[btn_w_ap, btn_w_rj]])
             await context.bot.send_message(
@@ -617,7 +630,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         USER_STATE[user_id]["step"] = "waiting_for_cookies"
         
         btn_cnc = KeyboardButton(ln["btn_cancel"])
-        object.__setattr__(btn_cnc, 'style', 'danger')
+        _style(btn_cnc, 'danger')
         await update.message.reply_text(ln["send_cookies"], reply_markup=ReplyKeyboardMarkup([[btn_cnc]], resize_keyboard=True))
         return
 
@@ -632,8 +645,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         btn_reg = KeyboardButton(ln["btn_acc_reg"])
         btn_cnc = KeyboardButton(ln["btn_cancel"])
-        object.__setattr__(btn_reg, 'style', 'success')
-        object.__setattr__(btn_cnc, 'style', 'danger')
+        _style(btn_reg, 'success')
+        _style(btn_cnc, 'danger')
         
         kb = ReplyKeyboardMarkup([[btn_reg], [btn_cnc]], resize_keyboard=True)
         await update.message.reply_text(ln["cookies_rec"], reply_markup=kb)
@@ -644,8 +657,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if state and (state.get("step") == "cookies_submitted" or state.get("step") == "2fa_verify"):
             btn_sub = KeyboardButton(ln["btn_subbed"])
             btn_cnc = KeyboardButton(ln["btn_cancel"])
-            object.__setattr__(btn_sub, 'style', 'success')
-            object.__setattr__(btn_cnc, 'style', 'danger')
+            _style(btn_sub, 'success')
+            _style(btn_cnc, 'danger')
             
             kb = ReplyKeyboardMarkup([[btn_sub], [btn_cnc]], resize_keyboard=True)
             await update.message.reply_text(ln["invite_check"], reply_markup=kb)
@@ -727,14 +740,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         btn_reg = KeyboardButton(ln["btn_acc_reg"])
         btn_cnc = KeyboardButton(ln["btn_cancel"])
-        object.__setattr__(btn_reg, 'style', 'success')
-        object.__setattr__(btn_cnc, 'style', 'danger')
+        _style(btn_reg, 'success')
+        _style(btn_cnc, 'danger')
         reg_kb = ReplyKeyboardMarkup([[btn_reg], [btn_cnc]], resize_keyboard=True)
         
         await update.message.reply_text("👉 2FA Key Received. Now verify and submit using the panel below.", reply_markup=reg_kb)
 
         btn_ref = InlineKeyboardButton("🔄 Refresh", callback_data="refresh_2fa_code")
-        object.__setattr__(btn_ref, 'style', 'primary')
+        _style(btn_ref, 'primary')
         inline_kb = InlineKeyboardMarkup([[btn_ref]])
         
         msg = await update.message.reply_text(
@@ -764,7 +777,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if text in ["ℹ️ SUPPORT", "ℹ️ সাপোর্ট (SUPPORT)"]:
         btn_adm = InlineKeyboardButton("👤 Admin", url="https://t.me/adim_shuvo")
-        object.__setattr__(btn_adm, 'style', 'primary')
+        _style(btn_adm, 'primary')
         inline_kb = InlineKeyboardMarkup([[btn_adm]])
         await update.message.reply_text(ln["support_msg"], reply_markup=inline_kb)
         return
@@ -772,8 +785,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text in ["🌐 LANGUAGE", "🌐 ভাষা (LANGUAGE)"]:
         btn_bn = InlineKeyboardButton("🇧🇩 বাংলা", callback_data="lang_bn")
         btn_en = InlineKeyboardButton("🇬🇧 English", callback_data="lang_en")
-        object.__setattr__(btn_bn, 'style', 'success')
-        object.__setattr__(btn_en, 'style', 'primary')
+        _style(btn_bn, 'success')
+        _style(btn_en, 'primary')
         
         kb = InlineKeyboardMarkup([[btn_bn, btn_en]])
         await update.message.reply_text(ln["select_lang"], reply_markup=kb)
@@ -784,9 +797,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         btn_fb_cat = KeyboardButton("📘𝗙𝗔𝗖𝗘𝗕𝗢𝗢𝗞 𝗧𝗔𝗦𝗞")
         btn_back = KeyboardButton(ln["btn_back"])
         
-        object.__setattr__(btn_ig_cat, 'style', 'primary')
-        object.__setattr__(btn_fb_cat, 'style', 'success')
-        object.__setattr__(btn_back, 'style', 'danger')
+        _style(btn_ig_cat, 'primary')
+        _style(btn_fb_cat, 'success')
+        _style(btn_back, 'danger')
         
         vertical_keyboard = [
             [btn_ig_cat],
@@ -814,11 +827,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         sub_tasks = []
         for t in active_tasks:
             btn_t = KeyboardButton(f"📌 {t['name']} ({t['price']} ৳)")
-            object.__setattr__(btn_t, 'style', 'success')
+            _style(btn_t, 'success')
             sub_tasks.append([btn_t])
             
         btn_cnc = KeyboardButton(ln["btn_cancel"])
-        object.__setattr__(btn_cnc, 'style', 'danger')
+        _style(btn_cnc, 'danger')
         sub_tasks.append([btn_cnc])
         await update.message.reply_text(ln["choose_type"], reply_markup=ReplyKeyboardMarkup(sub_tasks, resize_keyboard=True))
         return
@@ -841,9 +854,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             btn_vid = KeyboardButton(ln["btn_video"])
             btn_cnc = KeyboardButton(ln["btn_cancel"])
             
-            object.__setattr__(btn_str, 'style', 'success')
-            object.__setattr__(btn_vid, 'style', 'primary')
-            object.__setattr__(btn_cnc, 'style', 'danger')
+            _style(btn_str, 'success')
+            _style(btn_vid, 'primary')
+            _style(btn_cnc, 'danger')
             
             kb = ReplyKeyboardMarkup([[btn_str], [btn_vid], [btn_cnc]], resize_keyboard=True)
             rules_msg = f"🛡️ 🌟 *{target_task['name']}*\n\n💵 Payout: ৳{target_task['price']}\n\n📝 *Rules:*\n{target_task['rules']}\n\n🚀 Tap START to continue."
@@ -890,20 +903,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     state["step"] = "waiting_for_2fa"
                     btn_2fa = KeyboardButton(ln["btn_how_to_2fa"])
                     btn_cnc = KeyboardButton(ln["btn_cancel"])
-                    object.__setattr__(btn_2fa, 'style', 'primary')
-                    object.__setattr__(btn_cnc, 'style', 'danger')
+                    _style(btn_2fa, 'primary')
+                    _style(btn_cnc, 'danger')
                     task_2fa_kb = ReplyKeyboardMarkup([[btn_2fa], [btn_cnc]], resize_keyboard=True)
                     await update.message.reply_text(ln["send_2fa_secret"], reply_markup=task_2fa_kb)
                 else:
                     if task_cat == "facebook":
                         state["step"] = "waiting_for_fb_uid"
                         btn_cnc = KeyboardButton(ln["btn_cancel"])
-                        object.__setattr__(btn_cnc, 'style', 'danger')
+                        _style(btn_cnc, 'danger')
                         await update.message.reply_text(ln["send_fb_uid"], reply_markup=ReplyKeyboardMarkup([[btn_cnc]], resize_keyboard=True))
                     else:
                         state["step"] = "waiting_for_cookies"
                         btn_cnc = KeyboardButton(ln["btn_cancel"])
-                        object.__setattr__(btn_cnc, 'style', 'danger')
+                        _style(btn_cnc, 'danger')
                         await update.message.reply_text(ln["send_cookies"], reply_markup=ReplyKeyboardMarkup([[btn_cnc]], resize_keyboard=True))
             return
 
@@ -919,7 +932,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
             
         btn_wth = InlineKeyboardButton("Withdraw", callback_data="start_withdraw")
-        object.__setattr__(btn_wth, 'style', 'success')
+        _style(btn_wth, 'success')
         inline_wb = InlineKeyboardMarkup([[btn_wth]])
         await update.message.reply_text(ln["withdraw_dash"].format(bal=bal, rec=max(0.0, bal - 5.0)), reply_markup=inline_wb)
         return
@@ -939,18 +952,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         btn_del_tn = KeyboardButton("🗑️ Delete Task Name")
         btn_back_m = KeyboardButton(ln["btn_back"])
         
-        object.__setattr__(btn_add_t, 'style', 'success')
-        object.__setattr__(btn_del_t, 'style', 'danger')
-        object.__setattr__(btn_vis_t, 'style', 'primary')
-        object.__setattr__(btn_brd_t, 'style', 'primary')
-        object.__setattr__(btn_add_m, 'style', 'success')
-        object.__setattr__(btn_sav_u, 'style', 'success')
-        object.__setattr__(btn_all_r, 'style', 'primary')
-        object.__setattr__(btn_del_u, 'style', 'danger')
-        object.__setattr__(btn_pwd_t, 'style', 'primary')
-        object.__setattr__(btn_add_tn, 'style', 'success')
-        object.__setattr__(btn_del_tn, 'style', 'danger')
-        object.__setattr__(btn_back_m, 'style', 'danger')
+        _style(btn_add_t, 'success')
+        _style(btn_del_t, 'danger')
+        _style(btn_vis_t, 'primary')
+        _style(btn_brd_t, 'primary')
+        _style(btn_add_m, 'success')
+        _style(btn_sav_u, 'success')
+        _style(btn_all_r, 'primary')
+        _style(btn_del_u, 'danger')
+        _style(btn_pwd_t, 'primary')
+        _style(btn_add_tn, 'success')
+        _style(btn_del_tn, 'danger')
+        _style(btn_back_m, 'danger')
         
         kb = ReplyKeyboardMarkup([
             [btn_add_t, btn_del_t],
@@ -993,8 +1006,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id == ADMIN_ID and text == "❌ Delete Task":
         btn_del_ig = InlineKeyboardButton("Instagram Tasks", callback_data="adm_del_cat:instagram")
         btn_del_fb = InlineKeyboardButton("Facebook Tasks", callback_data="adm_del_cat:facebook")
-        object.__setattr__(btn_del_ig, 'style', 'danger')
-        object.__setattr__(btn_del_fb, 'style', 'danger')
+        _style(btn_del_ig, 'danger')
+        _style(btn_del_fb, 'danger')
         
         kb = InlineKeyboardMarkup([[btn_del_ig, btn_del_fb]])
         await update.message.reply_text("🗑️ কোন ক্যাটাগরির কাজ ডিলিট করতে চান?", reply_markup=kb)
@@ -1014,8 +1027,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         v = db_data["visibility"]
         btn_h_ig = InlineKeyboardButton(f"IG Cat [{'ON' if v.get('instagram_task',True) else 'OFF'}]", callback_data="h_ig_m")
         btn_h_fb = InlineKeyboardButton(f"FB Cat [{'ON' if v.get('facebook_task',True) else 'OFF'}]", callback_data="h_fb_m")
-        object.__setattr__(btn_h_ig, 'style', 'primary')
-        object.__setattr__(btn_h_fb, 'style', 'primary')
+        _style(btn_h_ig, 'primary')
+        _style(btn_h_fb, 'primary')
         
         kb = InlineKeyboardMarkup([[btn_h_ig, btn_h_fb]])
         await update.message.reply_text("👁️ Click to Toggle Category Visibility:", reply_markup=kb)
@@ -1034,7 +1047,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id == ADMIN_ID and text == "🗑️ User Delete":
         total_saved_usernames = len(db_data.get("saved_usernames", []))
         btn_conf_del = InlineKeyboardButton("⚠️ ডিলিট নিশ্চিত করুন", callback_data="adm_confirm_delete_all_saved_usernames")
-        object.__setattr__(btn_conf_del, 'style', 'danger')
+        _style(btn_conf_del, 'danger')
         
         kb = InlineKeyboardMarkup([[btn_conf_del]])
         await update.message.reply_text(
@@ -1053,8 +1066,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for s in pending_subs:
             btn_app = InlineKeyboardButton("Approve", callback_data=f"rep_app:{s['sub_id']}")
             btn_rej = InlineKeyboardButton("Reject", callback_data=f"rep_rej:{s['sub_id']}")
-            object.__setattr__(btn_app, 'style', 'success')
-            object.__setattr__(btn_rej, 'style', 'danger')
+            _style(btn_app, 'success')
+            _style(btn_rej, 'danger')
             inline_ap = InlineKeyboardMarkup([[btn_app, btn_rej]])
             
             u_name = s.get('username') or f"UID: {s['user_id']}"
@@ -1150,7 +1163,7 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 remaining = 30 - (int(datetime.datetime.now().timestamp()) % 30)
                 
                 btn_ref = InlineKeyboardButton("🔄 Refresh", callback_data="refresh_2fa_code")
-                object.__setattr__(btn_ref, 'style', 'primary')
+                _style(btn_ref, 'primary')
                 inline_kb = InlineKeyboardMarkup([[btn_ref]])
                 
                 await query.edit_message_text(
@@ -1172,8 +1185,8 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         btn_cat_ig = InlineKeyboardButton("🔷 Instagram", callback_data=f"adm_cat:instagram:{task_name}")
         btn_cat_fb = InlineKeyboardButton("🟩 Facebook", callback_data=f"adm_cat:facebook:{task_name}")
-        object.__setattr__(btn_cat_ig, 'style', 'primary')
-        object.__setattr__(btn_cat_fb, 'style', 'success')
+        _style(btn_cat_ig, 'primary')
+        _style(btn_cat_fb, 'success')
         
         kb = InlineKeyboardMarkup([[btn_cat_ig, btn_cat_fb]])
         await query.edit_message_text(
@@ -1223,7 +1236,7 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         buttons = []
         for t in active_tasks:
             btn_t_del = InlineKeyboardButton(f"🗑️ {t['name']} ({t['price']}৳)", callback_data=f"adm_do_del:{t['id']}")
-            object.__setattr__(btn_t_del, 'style', 'danger')
+            _style(btn_t_del, 'danger')
             buttons.append([btn_t_del])
             
         await query.message.reply_text("👇 নিচে থেকে যে টাস্কটি ডিলিট করতে চান সেটির উপর চাপুন:", reply_markup=InlineKeyboardMarkup(buttons))
@@ -1285,8 +1298,8 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         btn_bks = InlineKeyboardButton("bKash", callback_data="w_meth:bKash")
         btn_ngd = InlineKeyboardButton("Nagad", callback_data="w_meth:Nagad")
-        object.__setattr__(btn_bks, 'style', 'success')
-        object.__setattr__(btn_ngd, 'style', 'success')
+        _style(btn_bks, 'success')
+        _style(btn_ngd, 'success')
         
         kb = InlineKeyboardMarkup([[btn_bks, btn_ngd]])
         await query.edit_message_text(LANGUAGES[lang]["select_meth"], reply_markup=kb)
@@ -1298,7 +1311,7 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         USER_STATE[user_id]["step"] = "withdraw_num"
         
         btn_cnc = KeyboardButton(LANGUAGES[lang]["btn_cancel"])
-        object.__setattr__(btn_cnc, 'style', 'danger')
+        _style(btn_cnc, 'danger')
         
         await context.bot.send_message(chat_id=user_id, text=LANGUAGES[lang]["send_num"].format(method=method), reply_markup=ReplyKeyboardMarkup([[btn_cnc]], resize_keyboard=True))
         try: await query.delete_message()
@@ -1329,8 +1342,8 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         btn_m_ig = InlineKeyboardButton(f"IG Master [{'ON' if v.get('instagram_task',True) else 'OFF'}]", callback_data="h_ig_m")
         btn_m_fb = InlineKeyboardButton(f"FB Master [{'ON' if v.get('facebook_task',True) else 'OFF'}]", callback_data="h_fb_m")
-        object.__setattr__(btn_m_ig, 'style', 'primary')
-        object.__setattr__(btn_m_fb, 'style', 'primary')
+        _style(btn_m_ig, 'primary')
+        _style(btn_m_fb, 'primary')
         
         kb = InlineKeyboardMarkup([[btn_m_ig, btn_m_fb]])
         await query.edit_message_text("👁️ Category Visibility toggled:", reply_markup=kb)
