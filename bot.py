@@ -12,10 +12,19 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
-from telegram.error import TelegramError
+from telegram.error import TelegramError, Conflict
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+)
 logger = logging.getLogger(__name__)
+
+# httpx প্রতিটা Telegram API কল-এ একটা INFO লাইন প্রিন্ট করে (getUpdates,
+# getMe ইত্যাদি) — এতে console অকারণে ভরে যায়, তাই এটার লেভেল WARNING-এ
+# তুলে দেওয়া হলো যাতে শুধু আসল সমস্যা হলেই কিছু দেখায়।
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("apscheduler").setLevel(logging.WARNING)
 
 # ============================================================
 # CONFIG & FILE SETTINGS
@@ -1378,27 +1387,64 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except: pass
 
 # ============================================================
+# GLOBAL ERROR HANDLER
+# ============================================================
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    """
+    বটের যেকোনো হ্যান্ডলারে কোনো এরর হলে এটা ধরে ফেলে এবং শুধু log-এ
+    সংক্ষেপে দেখায় (পুরো messy traceback console-এ আসা বন্ধ করে)।
+    এটার কারণে বট কখনো ক্র্যাশ করবে না, শুধু ওই একটা রিকোয়েস্ট স্কিপ হবে।
+    """
+    err = context.error
+
+    # Telegram-এর নিজস্ব Conflict এরর (একই টোকেনের একাধিক instance বা
+    # deploy transition-এর সময় সাময়িকভাবে আসে) — এটা harmless, তাই
+    # শুধু ছোট্ট একটা info লাইন দেখিয়ে চুপচাপ স্কিপ করা হচ্ছে।
+    if isinstance(err, Conflict):
+        logger.warning("Conflict: অন্য কোনো bot instance সাময়িকভাবে সক্রিয় ছিল, স্বয়ংক্রিয়ভাবে recover হচ্ছে।")
+        return
+
+    logger.error(f"হ্যান্ডলারে সমস্যা হয়েছে: {err}", exc_info=err)
+
+    # চাইলে এডমিনকে জানিয়ে দেওয়া, কিন্তু এটাও ব্যর্থ হলে যেন বট না থামে
+    try:
+        if ADMIN_ID:
+            await context.bot.send_message(
+                chat_id=ADMIN_ID,
+                text=f"⚠️ বটে একটা এরর হয়েছে (স্বয়ংক্রিয়ভাবে সামলানো হয়েছে):\n\n{type(err).__name__}: {err}"
+            )
+    except Exception:
+        pass
+
+# ============================================================
+# DUMMY HEALTH-CHECK SERVER (Render "Web Service" পোর্ট চায়)
+# ============================================================
+def _run_dummy_server():
+    """
+    Render "Web Service" একটা খোলা পোর্ট আশা করে, নাহলে সার্ভিসটাকে
+    unhealthy ভেবে বারবার restart করে। বট নিজে কোনো HTTP পোর্ট ব্যবহার
+    করে না বলে, শুধু Render-কে সন্তুষ্ট রাখতে একটা ছোট্ট ডামি সার্ভার
+    আলাদা থ্রেডে চালানো হচ্ছে — এটা বটের আসল কাজে কোনো প্রভাব ফেলে না।
+    এটা প্রোগ্রাম চলাকালীন একবারই চালু হয় (bot restart হলেও দ্বিতীয়বার না)।
+    """
+    port = int(os.environ.get("PORT", 10000))
+    class _Health(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"Bot is running")
+        def log_message(self, *args):
+            pass  # এই সার্ভারের রিকোয়েস্ট আলাদা করে log করার দরকার নেই
+    try:
+        HTTPServer(("0.0.0.0", port), _Health).serve_forever()
+    except Exception as e:
+        logger.error(f"Health-check সার্ভার চালু করা যায়নি: {e}")
+
+# ============================================================
 # MAIN EXECUTION
 # ============================================================
 
 def main():
-    # Render "Web Service" একটা খোলা পোর্ট আশা করে, নাহলে সার্ভিসটাকে
-    # unhealthy ভেবে বারবার restart করে। বট নিজে কোনো HTTP পোর্ট ব্যবহার
-    # করে না বলে, শুধু Render-কে সন্তুষ্ট রাখতে একটা ছোট্ট ডামি সার্ভার
-    # আলাদা থ্রেডে চালানো হচ্ছে — এটা বটের আসল কাজে কোনো প্রভাব ফেলে না।
-    def _run_dummy_server():
-        port = int(os.environ.get("PORT", 10000))
-        class _Health(BaseHTTPRequestHandler):
-            def do_GET(self):
-                self.send_response(200)
-                self.end_headers()
-                self.wfile.write(b"Bot is running")
-            def log_message(self, *args):
-                pass  # এই সার্ভারের রিকোয়েস্ট আলাদা করে log করার দরকার নেই
-        HTTPServer(("0.0.0.0", port), _Health).serve_forever()
-
-    threading.Thread(target=_run_dummy_server, daemon=True).start()
-
     _load_task_names()
     _load()  # স্টার্টআপেই Firebase থেকে সব ডেটা load করে ক্যাশে বসিয়ে দেয়
     logger.info("Firebase Realtime Database থেকে ডেটা সফলভাবে load হয়েছে।")
@@ -1406,8 +1452,20 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT, handle_message))
     app.add_handler(CallbackQueryHandler(callback_query))
+    app.add_error_handler(error_handler)
     logger.info("Bot fully updated with Custom Report Layouts.")
-    app.run_polling()
+    app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
-    main()
+    import time
+    threading.Thread(target=_run_dummy_server, daemon=True).start()
+    # main() কোনো কারণে ক্র্যাশ করলে (যেমন নেটওয়ার্ক সাময়িকভাবে ডাউন
+    # থাকলে), পুরো সার্ভিস বন্ধ না হয়ে বট নিজে থেকে কয়েক সেকেন্ড পর
+    # আবার চালু হওয়ার চেষ্টা করবে।
+    while True:
+        try:
+            main()
+            break  # স্বাভাবিকভাবে থামলে (যেমন Ctrl+C) আর restart হবে না
+        except Exception as e:
+            logger.error(f"বট অপ্রত্যাশিতভাবে বন্ধ হয়ে গেছে, ৫ সেকেন্ড পর আবার চালু হচ্ছে: {e}", exc_info=e)
+            time.sleep(5)
