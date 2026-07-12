@@ -7,7 +7,7 @@ import random
 import pyotp
 import logging
 import asyncio
-import requests  # Firebase REST API এর জন্য যুক্ত করা হয়েছে
+import requests
 
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
@@ -20,50 +20,70 @@ logger = logging.getLogger(__name__)
 # CONFIG & FILE SETTINGS
 # ============================================================
 
-BOT_TOKEN = "8738544813:AAHMBZucZMhEJyA88e-qI43RjzBYyL5_j_c"
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "6470499890"))
 
-# বাধ্যতামূলক চ্যানেলগুলোর ইউজারনেম
+# বাধ্যতামূলক চ্যানেলগুলোর ইউজারনেম (বটকে অবশ্যই এই চ্যানেলে এডমিন হতে হবে)
 REQUIRED_CHANNELS = ["@range_channele", "@insagramth"]
 
-# Firebase Realtime Database URL Configuration
+ADDING_TASK_NAME = {}  # কে task name যোগ করতে চায় track করতে
+_lock = threading.Lock()
+
+# ============================================================
+# FIREBASE REALTIME DATABASE (সব ডেটা এখানেই স্থায়ীভাবে সেভ হবে)
+# Render-এ ডিস্ক ephemeral, তাই local JSON file এর বদলে Firebase
+# ব্যবহার করা হচ্ছে যাতে redeploy/restart এ ডেটা হারিয়ে না যায়।
+# ============================================================
 FIREBASE_BASE_URL = "https://realtime-database-7310e-default-rtdb.firebaseio.com"
+_DATA_CACHE = None  # in-memory cache, _lock দ্বারা সুরক্ষিত
 
-# ============================================================
-# FIREBASE HELPER FUNCTIONS (REALTIME STORAGE)
-# ============================================================
-
-def firebase_get(path):
+def _firebase_get(path=""):
     """Firebase থেকে ডেটা রিড করার ফাংশন"""
     try:
-        response = requests.get(f"{FIREBASE_BASE_URL}/{path}.json")
-        if response.status_code == 200:
-            return response.json() or {}
+        r = requests.get(f"{FIREBASE_BASE_URL}/{path}.json", timeout=10)
+        if r.status_code == 200:
+            return r.json()
+        logger.error(f"Firebase GET failed on '{path}': HTTP {r.status_code}")
     except Exception as e:
-        logger.error(f"Firebase GET Error on {path}: {e}")
-    return {}
+        logger.error(f"Firebase GET Error on '{path}': {e}")
+    return None
 
-def firebase_put(path, data):
-    """Firebase-এ ডেটা রাইট/আপডেট করার ফাংশন"""
+def _firebase_patch(data: dict, path=""):
+    """Firebase-এ শুধু নির্দিষ্ট top-level key গুলো আপডেট করে (অন্য কোনো ডেটা মোছে না)"""
     try:
-        response = requests.put(f"{FIREBASE_BASE_URL}/{path}.json", json=data)
-        return response.status_code == 200
+        r = requests.patch(f"{FIREBASE_BASE_URL}/{path}.json", json=data, timeout=10)
+        if r.status_code == 200:
+            return True
+        logger.error(f"Firebase PATCH failed on '{path}': HTTP {r.status_code}")
     except Exception as e:
-        logger.error(f"Firebase PUT Error on {path}: {e}")
+        logger.error(f"Firebase PATCH Error on '{path}': {e}")
     return False
 
-# ============================================================
-# TASK NAMES STORAGE VIA FIREBASE
-# ============================================================
-TASK_NAMES_LIST = {}  # মেমরিতে রাখার জন্য
-ADDING_TASK_NAME = {}
+def _firebase_put(data, path=""):
+    """Firebase-এ একটা নির্দিষ্ট path সম্পূর্ণভাবে overwrite করে (delete সহ ঠিকভাবে reflect হয়)"""
+    try:
+        r = requests.put(f"{FIREBASE_BASE_URL}/{path}.json", json=data, timeout=10)
+        if r.status_code == 200:
+            return True
+        logger.error(f"Firebase PUT failed on '{path}': HTTP {r.status_code}")
+    except Exception as e:
+        logger.error(f"Firebase PUT Error on '{path}': {e}")
+    return False
+
+# ===================== TASK NAMES STORAGE (Firebase) =====================
+TASK_NAMES_LIST = {}  # মেমরিতে রাখার জন্য (স্টার্টআপে Firebase থেকে load হয়)
 
 def _load_task_names():
+    """সব Task names Firebase থেকে load করুন"""
     global TASK_NAMES_LIST
-    TASK_NAMES_LIST = firebase_get("task_names_storage") or {}
+    remote = _firebase_get("task_names_storage")
+    TASK_NAMES_LIST = remote if isinstance(remote, dict) else {}
 
 def _save_task_names():
-    firebase_put("task_names_storage", TASK_NAMES_LIST)
+    """সব Task names Firebase-এ save করুন"""
+    ok = _firebase_put(TASK_NAMES_LIST, "task_names_storage")
+    if not ok:
+        logger.error("Task names Firebase-এ সেভ করা যায়নি!")
 
 # ============================================================
 # MULTI-LANGUAGE DICTIONARY
@@ -143,7 +163,7 @@ LANGUAGES = {
         "send_cookies": "👉 অনুগ্রহ করে আপনার কুকিজ (Cookies) ডাটা পাঠান",
         "send_fb_uid": "👉 অনুগ্রহ করে আপনার ফেসবুক ইউআইডি (Facebook UID) পাঠান",
         "invalid_2fa": "❌ ভুল 2FA সিক্রেট কি! দয়া করে আবার সঠিক কি পাঠান:",
-        "withdraw_dash": "💳 আপনার ব্যালেন্স ড্যাশবোর্ড\n\n💰 ব্যালেন্স: {bal} ৳\n💸 সর্বনিম্ন উইথড্র: ৫০ ৳\n💳 উইথড্র充电 চার্জ: ৫ ৳\n✅ আপনি পাবেন: {rec} ৳",
+        "withdraw_dash": "💳 আপনার ব্যালেন্স ড্যাশবোর্ড\n\n💰 ব্যালেন্স: {bal} ৳\n💸 সর্বনিম্ন উইথড্র: ৫০ ৳\n💳 উইথড্র চার্জ: ৫ ৳\n✅ আপনি পাবেন: {rec} ৳",
         "withdraw_min_err": "❌ Unsuccessful balance: Minimum 50 ৳ required",
         "select_meth": "💳 আপনার উইথড্র পদ্ধতি নির্বাচন করুন:",
         "send_num": "📱 অনুগ্রহ করে আপনার {method} নম্বরটি পাঠান",
@@ -168,45 +188,79 @@ LANGUAGES = {
 }
 
 # ============================================================
-# DATABASE FUNCTIONS (REDIRECTED TO FIREBASE)
+# DATABASE FUNCTIONS
 # ============================================================
 
-def _load_all_data():
-    """বটের সম্পূর্ণ ডাটাবেজ একবারে ফায়ারবেস থেকে নিয়ে আসে"""
-    base_data = firebase_get("users")
-    
-    # ডিফল্ট ডাটা স্ট্রাকচার নিশ্চিত করা
-    if "users" not in base_data: base_data["users"] = {}
-    if "submissions" not in base_data: base_data["submissions"] = {}
-    if "withdrawals" not in base_data: base_data["withdrawals"] = {}
-    if "dynamic_tasks" not in base_data: base_data["dynamic_tasks"] = {}
-    if "saved_usernames" not in base_data: base_data["saved_usernames"] = []
-    if "task_password" not in base_data: base_data["task_password"] = "shuvo9"
-    if "visibility" not in base_data: base_data["visibility"] = {"instagram_task": True, "facebook_task": True}
-    
-    return base_data
+def _default_data():
+    return {
+        "users": {},
+        "submissions": {},
+        "withdrawals": {},
+        "dynamic_tasks": {},
+        "saved_usernames": [],
+        "task_password": "shuvo9",
+        "visibility": {"instagram_task": True, "facebook_task": True}
+    }
 
-def _save_all_data(data):
-    """সম্পূর্ণ ডাটা ফায়ারবেসে পুশ করে"""
-    firebase_put("users", data)
+def _load():
+    """মেমরি ক্যাশ থেকে ডেটা রিটার্ন করে; প্রথমবার Firebase থেকে fetch করে ক্যাশ বানায়"""
+    global _DATA_CACHE
+    if _DATA_CACHE is not None:
+        return _DATA_CACHE
+    remote = _firebase_get()
+    d = remote if isinstance(remote, dict) else {}
+    if "saved_usernames" not in d:
+        d["saved_usernames"] = []
+    if "dynamic_tasks" not in d:
+        d["dynamic_tasks"] = {}
+    if "task_password" not in d:
+        d["task_password"] = "shuvo9"
+    if "visibility" not in d:
+        d["visibility"] = {"instagram_task": True, "facebook_task": True}
+    if "users" not in d:
+        d["users"] = {}
+    if "submissions" not in d:
+        d["submissions"] = {}
+    if "withdrawals" not in d:
+        d["withdrawals"] = {}
+    _DATA_CACHE = d
+    return _DATA_CACHE
+
+def _save(data):
+    """ক্যাশ আপডেট করে এবং Firebase-এ (persist) সেভ করে (redeploy/restart এ ডেটা থাকবে)"""
+    global _DATA_CACHE
+    _DATA_CACHE = data
+    ok = _firebase_patch({
+        "users": data.get("users", {}),
+        "submissions": data.get("submissions", {}),
+        "withdrawals": data.get("withdrawals", {}),
+        "dynamic_tasks": data.get("dynamic_tasks", {}),
+        "saved_usernames": data.get("saved_usernames", []),
+        "task_password": data.get("task_password", "shuvo9"),
+        "visibility": data.get("visibility", {"instagram_task": True, "facebook_task": True}),
+    })
+    if not ok:
+        logger.error("⚠️ ডেটা Firebase-এ সেভ করা যায়নি! (network/permission সমস্যা হতে পারে)")
 
 def get_or_create_user(user_id: int, username: str = ""):
-    data = _load_all_data()
-    uid = str(user_id)
-    if uid not in data["users"]:
-        data["users"][uid] = {
-            "user_id": user_id,
-            "username": username,
-            "balance": 0.0,
-            "language": "bn", 
-            "success_count": 0,
-            "review_count": 0,
-            "rejected_count": 0
-        }
-        _save_all_data(data)
-    return data["users"][uid]
+    with _lock:
+        data = _load()
+        uid = str(user_id)
+        if uid not in data["users"]:
+            data["users"][uid] = {
+                "user_id": user_id,
+                "username": username,
+                "balance": 0.0,
+                "language": "bn", 
+                "success_count": 0,
+                "review_count": 0,
+                "rejected_count": 0
+            }
+            _save(data)
+        return data["users"][uid]
 
 def generate_profile_or_get_saved(task_category="instagram"):
+    """টাস্ক ক্যাটাগরির উপর ভিত্তি করে ডাটা জেনারেট করে"""
     first_names = ["fatima", "wafaa", "ahmed", "youssef", "omar", "nour", "ali"]
     last_names = ["Zayan", "Emad", "Khan", "Ahmed", "Ali", "Hassan"]
     f_name = f"{random.choice(first_names)} {random.choice(last_names)}"
@@ -214,11 +268,12 @@ def generate_profile_or_get_saved(task_category="instagram"):
     if task_category == "facebook":
         return f_name, "facebook_no_username"
         
-    data = _load_all_data()
-    if data.get("saved_usernames"):
-        login_name = data["saved_usernames"].pop(0)
-        _save_all_data(data)
-        return f_name, login_name
+    with _lock:
+        data = _load()
+        if data.get("saved_usernames"):
+            login_name = data["saved_usernames"].pop(0)
+            _save(data)
+            return f_name, login_name
             
     return None, None
 
@@ -312,7 +367,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     text = update.message.text.strip()
     
-    db_data = _load_all_data()
+    db_data = _load()
     user_profile = get_or_create_user(user_id, update.effective_user.username or "")
     lang = user_profile.get("language", "bn")
     ln = LANGUAGES[lang]
@@ -347,19 +402,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if user_id == ADMIN_ID and USER_STATE.get(user_id, {}).get("step") == "admin_change_password":
         USER_STATE.pop(user_id, None)
-        db_data["task_password"] = text
-        _save_all_data(db_data)
+        with _lock:
+            data = _load()
+            data["task_password"] = text
+            _save(data)
         await update.message.reply_text(f"🔐 সফলভাবে নতুন পাসওয়ার্ড সেভ করা হয়েছে!\nবর্তমান পাসওয়ার্ড: `{text}`", parse_mode="Markdown", reply_markup=main_menu_keyboard(user_id, lang))
         return
 
     if user_id == ADMIN_ID and USER_STATE.get(user_id, {}).get("step") == "admin_save_username":
         USER_STATE.pop(user_id, None)
         raw_names = text.replace(",", " ").split()
-        for r_name in raw_names:
-            if r_name not in db_data["saved_usernames"]:
-                db_data["saved_usernames"].append(r_name)
-        _save_all_data(db_data)
-        await update.message.reply_text(f"✅ সফলভাবে ইউজারনেম সেভ করা হয়েছে!\nবর্তমানে মোট সেভ করা ইউজারনেম: {len(db_data['saved_usernames'])} টি।", reply_markup=main_menu_keyboard(user_id, lang))
+        with _lock:
+            data = _load()
+            for r_name in raw_names:
+                if r_name not in data["saved_usernames"]:
+                    data["saved_usernames"].append(r_name)
+            _save(data)
+        await update.message.reply_text(f"✅ সফলভাবে ইউজারনেম সেভ করা হয়েছে!\nবর্তমানে মোট সেভ করা ইউজারনেম: {len(data['saved_usernames'])} টি।", reply_markup=main_menu_keyboard(user_id, lang))
         return
 
     if user_id == ADMIN_ID and USER_STATE.get(user_id, {}).get("step") == "add_task_button_name":
@@ -446,16 +505,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             amount = float(text)
             target = USER_STATE[user_id]["target_uid"]
-            if target in db_data["users"]:
-                db_data["users"][target]["balance"] = round(db_data["users"][target]["balance"] + amount, 2)
-                _save_all_data(db_data)
-                await update.message.reply_text(f"✅ Added ৳{amount} to UID {target}")
-                try:
-                    await context.bot.send_message(chat_id=int(target), text=f"💰 Admin added ৳{amount} to your balance!")
-                except:
-                    pass
-            else:
-                await update.message.reply_text("❌ User not found.")
+            with _lock:
+                data = _load()
+                if target in data["users"]:
+                    data["users"][target]["balance"] = round(data["users"][target]["balance"] + amount, 2)
+                    _save(data)
+                    await update.message.reply_text(f"✅ Added ৳{amount} to UID {target}")
+                    try:
+                        await context.bot.send_message(chat_id=int(target), text=f"💰 Admin added ৳{amount} to your balance!")
+                    except:
+                        pass
+                else:
+                    await update.message.reply_text("❌ User not found.")
         except:
             await update.message.reply_text("❌ Invalid Amount.")
         USER_STATE.pop(user_id, None)
@@ -511,13 +572,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if text == ln["btn_confirm"]:
             state = USER_STATE[user_id]
             w_id = str(uuid.uuid4())[:8]
-            
-            db_data["withdrawals"][w_id] = {
-                "w_id": w_id, "user_id": user_id, "username": user_profile["username"],
-                "number": state["number"], "method": state["method"], "amount": state["amt"], "status": "pending"
-            }
-            _save_all_data(db_data)
-            
+            with _lock:
+                data = _load()
+                data["withdrawals"][w_id] = {
+                    "w_id": w_id, "user_id": user_id, "username": user_profile["username"],
+                    "number": state["number"], "method": state["method"], "amount": state["amt"], "status": "pending"
+                }
+                _save(data)
             await update.message.reply_text(ln["pay_pending"], reply_markup=main_menu_keyboard(user_id, lang))
             
             btn_w_ap = InlineKeyboardButton("✅ APPROVE", callback_data=f"w_app:{w_id}")
@@ -595,12 +656,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 else:
                     f.write(f"Dynamic 2FA Report\nTask Name: {state.get('t_name','')}\nUsername: {state['login']}\nPassword: {state['pass']}\n2FA Key: {state.get('secret','')}")
                 
-            db_data["submissions"][sub_id] = {
-                "sub_id": sub_id, "user_id": user_id, "username": user_profile["username"],
-                "task_type": "2fa", "task_id": state.get("task_id"), "login": state['login'], "fb_uid": state.get("fb_uid", ""), "category": state.get("cat"), "status": "pending"
-            }
-            db_data["users"][str(user_id)]["review_count"] += 1
-            _save_all_data(db_data)
+            with _lock:
+                d = _load()
+                d["submissions"][sub_id] = {
+                    "sub_id": sub_id, "user_id": user_id, "username": user_profile["username"],
+                    "task_type": "2fa", "task_id": state.get("task_id"), "login": state['login'], "fb_uid": state.get("fb_uid", ""), "category": state.get("cat"), "status": "pending"
+                }
+                d["users"][str(user_id)]["review_count"] += 1
+                _save(d)
                 
             with open(file_path, "rb") as f:
                 await context.bot.send_document(chat_id=ADMIN_ID, document=f, caption=f"实时 Dynamic 2FA Task\nUser: @{user_profile['username']}\nUID: {user_id}")
@@ -618,14 +681,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f.write(f"Task Name: {state['t_name']}\nFirst name: {state['f_name']}\nFacebook UID: {state.get('fb_uid','')}\nPassword: {state['pass']}\nCookies: {state['cookies_data']}")
                 else:
                     f.write(f"Task Name: {state['t_name']}\nUsername: {state['login']}\nPassword: {state['pass']}\nCookies: {state['cookies_data']}")
-            
-            db_data["submissions"][sub_id] = {
-                "sub_id": sub_id, "user_id": user_id, "username": user_profile["username"],
-                "task_type": "cookies", "task_id": state.get("task_id"), "login": state['login'], "fb_uid": state.get("fb_uid", ""), "category": state.get("cat"), "status": "pending"
-            }
-            db_data["users"][str(user_id)]["review_count"] += 1
-            _save_all_data(db_data)
-            
+            with _lock:
+                data = _load()
+                data["submissions"][sub_id] = {
+                    "sub_id": sub_id, "user_id": user_id, "username": user_profile["username"],
+                    "task_type": "cookies", "task_id": state.get("task_id"), "login": state['login'], "fb_uid": state.get("fb_uid", ""), "category": state.get("cat"), "status": "pending"
+                }
+                data["users"][str(user_id)]["review_count"] += 1
+                _save(data)
             with open(file_path, "rb") as f:
                 await context.bot.send_document(chat_id=ADMIN_ID, document=f, caption=f"🍪 Dynamic Cookies Task Submission\nUser: @{user_profile['username']}\nUID: {user_id}\nSub ID: {sub_id}")
             os.remove(file_path)
@@ -959,12 +1022,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if user_id == ADMIN_ID and text == "🗑️ User Delete":
+        total_saved_usernames = len(db_data.get("saved_usernames", []))
         btn_conf_del = InlineKeyboardButton("⚠️ ডিলিট নিশ্চিত করুন", callback_data="adm_confirm_delete_all_saved_usernames")
         object.__setattr__(btn_conf_del, 'style', 'danger')
         
         kb = InlineKeyboardMarkup([[btn_conf_del]])
         await update.message.reply_text(
-            f"📊 বটের মোট সেভ করা ইউজারনেমের সংখ্যা: {len(db_data.get('saved_usernames', []))} টি।\n\n"
+            f"📊 বটের মোট সেভ করা ইউজারনেমের সংখ্যা: {total_saved_usernames} টি।\n\n"
             f"❗ আপনি যদি বটের সমস্ত সেভ করা ইউজারনেম ডাটা ডিলিট করতে চান তবে নিচের ডিলিট বাটনে ক্লিক করুন।",
             reply_markup=kb
         )
@@ -986,6 +1050,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             u_name = s.get('username') or f"UID: {s['user_id']}"
             t_type = "Cookies" if s.get('task_type') == "cookies" else "2FA"
             
+            # 🎯 ফেসবুক এবং ইনস্টাগ্রামের ক্যাটাগরি অনুযায়ী রিপোর্ট ফরম্যাট সাজানো
             if s.get('category') == "facebook":
                 report_txt = (
                     f"🆔 User : @{u_name}\n"
@@ -1024,7 +1089,7 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
     data = query.data
     
-    db_data = _load_all_data()
+    db_data = _load()
     user_profile = get_or_create_user(user_id, query.from_user.username or "")
     lang = user_profile.get("language", "bn")
     ln = LANGUAGES[lang]
@@ -1039,6 +1104,7 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data.startswith("delete_task_name:"):
         task_name = data.replace("delete_task_name:", "")
+        
         if task_name in TASK_NAMES_LIST:
             del TASK_NAMES_LIST[task_name]
             _save_task_names()
@@ -1157,12 +1223,14 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data.startswith("adm_do_del:"):
         task_id = data.split(":")[1]
-        if task_id in db_data.get("dynamic_tasks", {}):
-            removed_task = db_data["dynamic_tasks"].pop(task_id)
-            _save_all_data(db_data)
-            await query.message.reply_text(f"✅ সফলভাবে টাস্কটি ডিলিট করা হয়েছে!\n🗑️ ডিলিট হওয়া টাস্ক: {removed_task['name']}")
-        else:
-            await query.message.reply_text("❌ দুঃখিত! টাস্কটি খুঁজে পাওয়া যায়নি অথবা অলরেডি ডিলিট হয়ে গেছে।")
+        with _lock:
+            d = _load()
+            if task_id in d.get("dynamic_tasks", {}):
+                removed_task = d["dynamic_tasks"].pop(task_id)
+                _save(d)
+                await query.message.reply_text(f"✅ সফলভাবে টাস্কটি ডিলিট করা হয়েছে!\n🗑️ ডিলিট হওয়া টাস্ক: {removed_task['name']}")
+            else:
+                await query.message.reply_text("❌ দুঃখিত! টাস্কটি খুঁজে পাওয়া যায়নি অথবা অলরেডি ডিলিট হয়ে গেছে।")
         try: await query.delete_message()
         except: pass
         return
@@ -1176,8 +1244,11 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "id": t_id, "category": state["category"], "name": state.get("selected_task_name") or state.get("task_name"),
                 "price": state.get("task_price", 0.0), "rules": state.get("task_rules", ""), "type": t_type
             }
-            db_data["dynamic_tasks"][t_id] = new_task
-            _save_all_data(db_data)
+            with _lock:
+                d = _load()
+                if "dynamic_tasks" not in d: d["dynamic_tasks"] = {}
+                d["dynamic_tasks"][t_id] = new_task
+                _save(d)
                 
             USER_STATE.pop(user_id, None)
             await query.message.reply_text(f"✅ সফলভাবে নতুন টাস্ক সিস্টেমে সেভ করা হয়েছে!\n\n📌 নাম: {new_task['name']}\n💵 পেমেন্ট: {new_task['price']} ৳\n🎯 টাইপ: {new_task['type'].upper()}")
@@ -1187,8 +1258,10 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data.startswith("lang_"):
         new_lang = "bn" if data == "lang_bn" else "en"
-        db_data["users"][str(user_id)]["language"] = new_lang
-        _save_all_data(db_data)
+        with _lock:
+            d = _load()
+            d["users"][str(user_id)]["language"] = new_lang
+            _save(d)
         await query.message.reply_text(LANGUAGES[new_lang]["lang_changed"], reply_markup=main_menu_keyboard(user_id, new_lang))
         try: await query.delete_message()
         except: pass
@@ -1226,8 +1299,10 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data == "adm_confirm_delete_all_saved_usernames":
-        db_data["saved_usernames"] = []
-        _save_all_data(db_data)
+        with _lock:
+            d = _load()
+            d["saved_usernames"] = []
+            _save(d)
         await query.message.reply_text("💥 সফলভাবে বটের সকল সেভ করা ইউজারনেম ডাটা ডিলিট করে দেওয়া হয়েছে!", reply_markup=main_menu_keyboard(user_id, lang))
         try: await query.delete_message()
         except: pass
@@ -1236,9 +1311,11 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data.startswith("h_"):
         key_map = {"h_ig_m": "instagram_task", "h_fb_m": "facebook_task"}
         target_key = key_map[data]
-        db_data["visibility"][target_key] = not db_data["visibility"].get(target_key, True)
-        _save_all_data(db_data)
-        v = db_data["visibility"]
+        with _lock:
+            d = _load()
+            d["visibility"][target_key] = not d["visibility"].get(target_key, True)
+            _save(d)
+        v = d["visibility"]
         
         btn_m_ig = InlineKeyboardButton(f"IG Master [{'ON' if v.get('instagram_task',True) else 'OFF'}]", callback_data="h_ig_m")
         btn_m_fb = InlineKeyboardButton(f"FB Master [{'ON' if v.get('facebook_task',True) else 'OFF'}]", callback_data="h_fb_m")
@@ -1252,48 +1329,52 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data.startswith("w_app:") or data.startswith("w_rej:"):
         w_id = data.split(":")[1]
         is_approve = data.startswith("w_app:")
-        w_rec = db_data["withdrawals"].get(w_id)
-        if w_rec and w_rec["status"] == "pending":
-            if is_approve:
-                w_rec["status"] = "approved"
-                db_data["users"][str(w_rec["user_id"])]["balance"] = round(db_data["users"][str(w_rec["user_id"])]["balance"] - w_rec["amount"], 2)
-                msg = f"✅ Approved ৳{w_rec['amount']}"
-                u_msg = "✅ Your withdrawal request has been verified and approved by the admin."
-            else:
-                w_rec["status"] = "rejected"
-                msg = "❌ Rejected"
-                u_msg = "❌ Your withdrawal request has been rejected."
-            _save_all_data(db_data)
-            await query.edit_message_text(msg)
-            try: await context.bot.send_message(chat_id=w_rec["user_id"], text=u_msg)
-            except: pass
+        with _lock:
+            d = _load()
+            w_rec = d["withdrawals"].get(w_id)
+            if w_rec and w_rec["status"] == "pending":
+                if is_approve:
+                    w_rec["status"] = "approved"
+                    d["users"][str(w_rec["user_id"])]["balance"] = round(d["users"][str(w_rec["user_id"])]["balance"] - w_rec["amount"], 2)
+                    msg = f"✅ Approved ৳{w_rec['amount']}"
+                    u_msg = "✅ Your withdrawal request has been verified and approved by the admin."
+                else:
+                    w_rec["status"] = "rejected"
+                    msg = "❌ Rejected"
+                    u_msg = "❌ Your withdrawal request has been rejected."
+                _save(d)
+                await query.edit_message_text(msg)
+                try: await context.bot.send_message(chat_id=w_rec["user_id"], text=u_msg)
+                except: pass
         return
 
     if data.startswith("rep_app:") or data.startswith("rep_rej:"):
         sub_id = data.split(":")[1]
         is_approve = data.startswith("rep_app:")
-        s_rec = db_data["submissions"].get(sub_id)
-        if s_rec and s_rec["status"] == "pending":
-            u_id_str = str(s_rec["user_id"])
-            if is_approve:
-                s_rec["status"] = "approved"
-                t_info = db_data.get("dynamic_tasks", {}).get(s_rec.get("task_id"), {})
-                p_add = t_info.get("price", 3.5)
-                db_data["users"][u_id_str]["balance"] = round(db_data["users"][u_id_str]["balance"] + p_add, 2)
-                db_data["users"][u_id_str]["success_count"] += 1
-                db_data["users"][u_id_str]["review_count"] = max(0, db_data["users"][u_id_str]["review_count"] - 1)
-                msg = "✅ Approved submission."
-                u_msg = f"✅ Report approved, +৳{p_add}"
-            else:
-                s_rec["status"] = "rejected"
-                db_data["users"][u_id_str]["rejected_count"] += 1
-                db_data["users"][u_id_str]["review_count"] = max(0, db_data["users"][u_id_str]["review_count"] - 1)
-                msg = "❌ Rejected submission."
-                u_msg = "❌ Your Report Has Been Rejected 🥹"
-            _save_all_data(db_data)
-            await query.edit_message_text(msg)
-            try: await context.bot.send_message(chat_id=s_rec["user_id"], text=u_msg)
-            except: pass
+        with _lock:
+            d = _load()
+            s_rec = d["submissions"].get(sub_id)
+            if s_rec and s_rec["status"] == "pending":
+                u_id_str = str(s_rec["user_id"])
+                if is_approve:
+                    s_rec["status"] = "approved"
+                    t_info = d.get("dynamic_tasks", {}).get(s_rec.get("task_id"), {})
+                    p_add = t_info.get("price", 3.5)
+                    d["users"][u_id_str]["balance"] = round(d["users"][u_id_str]["balance"] + p_add, 2)
+                    d["users"][u_id_str]["success_count"] += 1
+                    d["users"][u_id_str]["review_count"] = max(0, d["users"][u_id_str]["review_count"] - 1)
+                    msg = "✅ Approved submission."
+                    u_msg = f"✅ Report approved, +৳{p_add}"
+                else:
+                    s_rec["status"] = "rejected"
+                    d["users"][u_id_str]["rejected_count"] += 1
+                    d["users"][u_id_str]["review_count"] = max(0, d["users"][u_id_str]["review_count"] - 1)
+                    msg = "❌ Rejected submission."
+                    u_msg = "❌ Your Report Has Been Rejected 🥹"
+                _save(d)
+                await query.edit_message_text(msg)
+                try: await context.bot.send_message(chat_id=s_rec["user_id"], text=u_msg)
+                except: pass
 
 # ============================================================
 # MAIN EXECUTION
@@ -1301,11 +1382,13 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     _load_task_names()
+    _load()  # স্টার্টআপেই Firebase থেকে সব ডেটা load করে ক্যাশে বসিয়ে দেয়
+    logger.info("Firebase Realtime Database থেকে ডেটা সফলভাবে load হয়েছে।")
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT, handle_message))
     app.add_handler(CallbackQueryHandler(callback_query))
-    logger.info("Bot fully loaded and sync with Firebase Realtime Link.")
+    logger.info("Bot fully updated with Custom Report Layouts.")
     app.run_polling()
 
 if __name__ == "__main__":
