@@ -9,8 +9,6 @@ import logging
 import asyncio
 import requests
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from google.oauth2.service_account import Credentials as GoogleCredentials
-from googleapiclient.discovery import build as google_build
 
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
@@ -96,56 +94,24 @@ def _firebase_put(data, path=""):
     return False
 
 # ============================================================
-# GOOGLE SHEETS (সব টাস্ক সাবমিশন এখানে স্বয়ংক্রিয়ভাবে সেভ হবে)
+# ID DUMP (Facebook/Instagram সাবমিশন এখানে জমা হবে, Admin Panel
+# থেকে txt ফাইল হিসেবে ডাউনলোড করলে খালি হয়ে যাবে)
 # ============================================================
-GOOGLE_SHEET_ID_FB = os.getenv("GOOGLE_SHEET_ID_FB")   # Facebook Sheet-এর ID
-GOOGLE_SHEET_ID_IG = os.getenv("GOOGLE_SHEET_ID_IG")   # Instagram Sheet-এর ID
-GOOGLE_SHEET_TAB_NAME = os.getenv("GOOGLE_SHEET_TAB_NAME", "Sheet1")  # প্রতিটা Sheet-এর ভেতরের ট্যাবের নাম
-GOOGLE_CREDS_PATH = "/etc/secrets/google-credentials.json"  # Render Secret File থেকে পড়া হবে
-
-_sheets_service = None
-
-def _get_sheets_service():
-    """Google Sheets API সার্ভিস একবারই তৈরি করে ক্যাশ করে রাখে"""
-    global _sheets_service
-    if _sheets_service is not None:
-        return _sheets_service
-    if not os.path.exists(GOOGLE_CREDS_PATH):
-        return None
-    try:
-        creds = GoogleCredentials.from_service_account_file(
-            GOOGLE_CREDS_PATH,
-            scopes=["https://www.googleapis.com/auth/spreadsheets"]
-        )
-        _sheets_service = google_build("sheets", "v4", credentials=creds, cache_discovery=False)
-        return _sheets_service
-    except Exception as e:
-        logger.error(f"Google Sheets সার্ভিস তৈরি করা যায়নি: {e}")
-        return None
-
-def append_to_google_sheet(row: list, category: str):
+def add_to_id_dump(category: str, entry_text: str):
     """
-    একটা সাবমিশন সঠিক Google Sheet-এ (Facebook/Instagram — দুইটা আলাদা
-    spreadsheet ফাইল) নতুন সারি (row) হিসেবে যোগ করে। কোনো কারণে ব্যর্থ
-    হলে (Sheet সেটআপ না থাকলে/নেটওয়ার্ক সমস্যা হলে) শুধু log করে চুপচাপ
-    স্কিপ করে — বট কখনো এর জন্য থামবে না।
+    একটা সাবমিশনের তথ্য Facebook/Instagram ডাম্প লিস্টে যোগ করে (Firebase-এ
+    persist থাকে)। কোনো কারণে ব্যর্থ হলে চুপচাপ log করে, বট থামে না।
     """
-    sheet_id = GOOGLE_SHEET_ID_FB if category == "facebook" else GOOGLE_SHEET_ID_IG
-    if not sheet_id:
-        return
-    service = _get_sheets_service()
-    if not service:
-        return
+    key = "fb_dump" if category == "facebook" else "ig_dump"
     try:
-        service.spreadsheets().values().append(
-            spreadsheetId=sheet_id,
-            range=f"{GOOGLE_SHEET_TAB_NAME}!A1",
-            valueInputOption="USER_ENTERED",
-            insertDataOption="INSERT_ROWS",
-            body={"values": [row]}
-        ).execute()
+        with _lock:
+            d = _load()
+            if key not in d:
+                d[key] = []
+            d[key].append(entry_text)
+            _save(d)
     except Exception as e:
-        logger.error(f"Google Sheet ('{category}') এ ডেটা লেখা যায়নি: {e}")
+        logger.error(f"ID ডাম্পে যোগ করা যায়নি ({category}): {e}")
 
 # ===================== TASK NAMES STORAGE (Firebase) =====================
 TASK_NAMES_LIST = {}  # মেমরিতে রাখার জন্য (স্টার্টআপে Firebase থেকে load হয়)
@@ -276,7 +242,9 @@ def _default_data():
         "dynamic_tasks": {},
         "saved_usernames": [],
         "task_password": "shuvo9",
-        "visibility": {"instagram_task": True, "facebook_task": True}
+        "visibility": {"instagram_task": True, "facebook_task": True},
+        "fb_dump": [],
+        "ig_dump": []
     }
 
 def _load():
@@ -300,6 +268,10 @@ def _load():
         d["submissions"] = {}
     if "withdrawals" not in d:
         d["withdrawals"] = {}
+    if "fb_dump" not in d:
+        d["fb_dump"] = []
+    if "ig_dump" not in d:
+        d["ig_dump"] = []
     _DATA_CACHE = d
     return _DATA_CACHE
 
@@ -315,6 +287,8 @@ def _save(data):
         "saved_usernames": data.get("saved_usernames", []),
         "task_password": data.get("task_password", "shuvo9"),
         "visibility": data.get("visibility", {"instagram_task": True, "facebook_task": True}),
+        "fb_dump": data.get("fb_dump", []),
+        "ig_dump": data.get("ig_dump", []),
     })
     if not ok:
         logger.error("⚠️ ডেটা Firebase-এ সেভ করা যায়নি! (network/permission সমস্যা হতে পারে)")
@@ -727,11 +701,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if state and state.get("step") == "2fa_final_confirm":
             sub_id = str(uuid.uuid4())[:8]
             file_path = f"submission_{sub_id}.txt"
+            if state.get("cat") == "facebook":
+                content_text = f"Dynamic 2FA Report\nTask Name: {state.get('t_name','')}\nFirst name: {state['f_name']}\nPassword: {state['pass']}\n2FA Key: {state.get('secret','')}"
+            else:
+                content_text = f"Dynamic 2FA Report\nTask Name: {state.get('t_name','')}\nUsername: {state['login']}\nPassword: {state['pass']}\n2FA Key: {state.get('secret','')}"
             with open(file_path, "w", encoding="utf-8") as f:
-                if state.get("cat") == "facebook":
-                    f.write(f"Dynamic 2FA Report\nTask Name: {state.get('t_name','')}\nFirst name: {state['f_name']}\nPassword: {state['pass']}\n2FA Key: {state.get('secret','')}")
-                else:
-                    f.write(f"Dynamic 2FA Report\nTask Name: {state.get('t_name','')}\nUsername: {state['login']}\nPassword: {state['pass']}\n2FA Key: {state.get('secret','')}")
+                f.write(content_text)
                 
             with _lock:
                 d = _load()
@@ -746,13 +721,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await context.bot.send_document(chat_id=ADMIN_ID, document=f, caption=f"实时 Dynamic 2FA Task\nUser: @{user_profile['username']}\nUID: {user_id}")
             os.remove(file_path)
 
-            append_to_google_sheet([
-                datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                sub_id, str(user_id), user_profile.get('username', ''),
-                state.get('t_name', ''), state.get('cat', ''), "2FA",
-                state.get('login', ''), state.get('fb_uid', ''), state.get('pass', ''),
-                state.get('secret', ''), ""  # শেষ কলাম cookies-এর জন্য, এখানে খালি
-            ], state.get('cat', 'instagram'))
+            dump_entry = (
+                f"সময়: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                f"Sub ID: {sub_id}\n"
+                f"User: @{user_profile.get('username','')} (UID: {user_id})\n"
+                f"{content_text}"
+            )
+            add_to_id_dump(state.get("cat", "instagram"), dump_entry)
 
             await update.message.reply_text(ln["report_received"], reply_markup=main_menu_keyboard(user_id, lang))
             USER_STATE.pop(user_id, None)
@@ -761,11 +736,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if state and state.get("step") == "cookies_final_confirm":
             sub_id = str(uuid.uuid4())[:8]
             file_path = f"submission_{sub_id}.txt"
+            if state.get("cat") == "facebook":
+                content_text = f"Task Name: {state['t_name']}\nFirst name: {state['f_name']}\nFacebook UID: {state.get('fb_uid','')}\nPassword: {state['pass']}\nCookies: {state['cookies_data']}"
+            else:
+                content_text = f"Task Name: {state['t_name']}\nUsername: {state['login']}\nPassword: {state['pass']}\nCookies: {state['cookies_data']}"
             with open(file_path, "w", encoding="utf-8") as f:
-                if state.get("cat") == "facebook":
-                    f.write(f"Task Name: {state['t_name']}\nFirst name: {state['f_name']}\nFacebook UID: {state.get('fb_uid','')}\nPassword: {state['pass']}\nCookies: {state['cookies_data']}")
-                else:
-                    f.write(f"Task Name: {state['t_name']}\nUsername: {state['login']}\nPassword: {state['pass']}\nCookies: {state['cookies_data']}")
+                f.write(content_text)
             with _lock:
                 data = _load()
                 data["submissions"][sub_id] = {
@@ -778,13 +754,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await context.bot.send_document(chat_id=ADMIN_ID, document=f, caption=f"🍪 Dynamic Cookies Task Submission\nUser: @{user_profile['username']}\nUID: {user_id}\nSub ID: {sub_id}")
             os.remove(file_path)
 
-            append_to_google_sheet([
-                datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                sub_id, str(user_id), user_profile.get('username', ''),
-                state.get('t_name', ''), state.get('cat', ''), "Cookies",
-                state.get('login', ''), state.get('fb_uid', ''), state.get('pass', ''),
-                "", state.get('cookies_data', '')  # 2FA কলাম খালি, cookies কলামে ডেটা
-            ], state.get('cat', 'instagram'))
+            dump_entry = (
+                f"সময়: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                f"Sub ID: {sub_id}\n"
+                f"User: @{user_profile.get('username','')} (UID: {user_id})\n"
+                f"{content_text}"
+            )
+            add_to_id_dump(state.get("cat", "instagram"), dump_entry)
 
             await update.message.reply_text(ln["report_received"], reply_markup=main_menu_keyboard(user_id, lang))
             USER_STATE.pop(user_id, None)
@@ -1019,6 +995,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         btn_pwd_t = KeyboardButton("🔐 Password Change")
         btn_add_tn = KeyboardButton("➕ Add Task Name")
         btn_del_tn = KeyboardButton("🗑️ Delete Task Name")
+        btn_ig_file = KeyboardButton("📷 Instagram File")
+        btn_fb_file = KeyboardButton("📘 Facebook File")
         btn_back_m = KeyboardButton(ln["btn_back"])
         
         _style(btn_add_t, 'success')
@@ -1032,6 +1010,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         _style(btn_pwd_t, 'primary')
         _style(btn_add_tn, 'success')
         _style(btn_del_tn, 'danger')
+        _style(btn_ig_file, 'primary')
+        _style(btn_fb_file, 'primary')
         _style(btn_back_m, 'danger')
         
         kb = ReplyKeyboardMarkup([
@@ -1040,9 +1020,41 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [btn_add_m, btn_sav_u],
             [btn_all_r, btn_del_u],
             [btn_pwd_t, btn_add_tn],
-            [btn_del_tn, btn_back_m]
+            [btn_del_tn, btn_ig_file],
+            [btn_fb_file, btn_back_m]
         ], resize_keyboard=True)
         await update.message.reply_text("🛠️ Admin Control Dashboard", reply_markup=kb)
+        return
+
+    if user_id == ADMIN_ID and text in ["📷 Instagram File", "📘 Facebook File"]:
+        category = "instagram" if text == "📷 Instagram File" else "facebook"
+        key = "ig_dump" if category == "instagram" else "fb_dump"
+        label = "Instagram" if category == "instagram" else "Facebook"
+
+        with _lock:
+            d = _load()
+            dump_list = d.get(key, [])
+            if not dump_list:
+                await update.message.reply_text(f"❌ এখনো পর্যন্ত কোনো নতুন {label} সাবমিশন জমা হয়নি।")
+                return
+
+            file_path = f"{key}_{uuid.uuid4().hex[:6]}.txt"
+            separator = "\n" + ("=" * 30) + "\n"
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(separator.join(dump_list))
+
+            # ফাইল পাঠানোর পর এই ক্যাটাগরির ডাম্প খালি করে দেওয়া হচ্ছে,
+            # যাতে পরের বার শুধু নতুন সাবমিশনগুলোই থাকে
+            d[key] = []
+            _save(d)
+
+        with open(file_path, "rb") as f:
+            await update.message.reply_document(
+                document=f,
+                filename=f"{label}_Submissions.txt",
+                caption=f"📄 মোট {len(dump_list)} টি {label} সাবমিশন। (এই ফাইল পাঠানোর সাথে সাথে লিস্ট খালি হয়ে গেছে, এখন থেকে নতুন সাবমিশন জমা হবে।)"
+            )
+        os.remove(file_path)
         return
 
     if user_id == ADMIN_ID and text == "🔐 Password Change":
