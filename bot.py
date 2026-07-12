@@ -826,7 +826,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         sub_tasks = []
         for t in active_tasks:
-            btn_t = KeyboardButton(f"📌 {t['name']} ({t['price']} ৳)")
+            btn_t = KeyboardButton(f"{t['name']} ({t['price']} ৳)")
             _style(btn_t, 'success')
             sub_tasks.append([btn_t])
             
@@ -836,32 +836,30 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(ln["choose_type"], reply_markup=ReplyKeyboardMarkup(sub_tasks, resize_keyboard=True))
         return
 
-    if text.startswith("📌 "):
-        clean_name = text.replace("📌 ", "").split(" (")[0]
-        all_tasks = db_data.get("dynamic_tasks", {})
-        
-        target_task = None
-        for tid, t in all_tasks.items():
-            if t["name"] == clean_name:
-                target_task = t
-                break
-                
-        if target_task:
-            tid = target_task["id"]
-            USER_STATE[user_id] = {"task_id": tid, "task_type": target_task["type"], "cat": target_task.get("category")}
-            
-            btn_str = KeyboardButton(ln["btn_start"])
-            btn_vid = KeyboardButton(ln["btn_video"])
-            btn_cnc = KeyboardButton(ln["btn_cancel"])
-            
-            _style(btn_str, 'success')
-            _style(btn_vid, 'primary')
-            _style(btn_cnc, 'danger')
-            
-            kb = ReplyKeyboardMarkup([[btn_str], [btn_vid], [btn_cnc]], resize_keyboard=True)
-            rules_msg = f"🛡️ 🌟 *{target_task['name']}*\n\n💵 Payout: ৳{target_task['price']}\n\n📝 *Rules:*\n{target_task['rules']}\n\n🚀 Tap START to continue."
-            await update.message.reply_text(rules_msg, parse_mode="Markdown", reply_markup=kb)
-            return
+    all_tasks_for_match = db_data.get("dynamic_tasks", {})
+    target_task = None
+    for tid, t in all_tasks_for_match.items():
+        label = f"{t['name']} ({t['price']} ৳)"
+        if text == label:
+            target_task = t
+            break
+
+    if target_task:
+        tid = target_task["id"]
+        USER_STATE[user_id] = {"task_id": tid, "task_type": target_task["type"], "cat": target_task.get("category")}
+
+        btn_str = KeyboardButton(ln["btn_start"])
+        btn_vid = KeyboardButton(ln["btn_video"])
+        btn_cnc = KeyboardButton(ln["btn_cancel"])
+
+        _style(btn_str, 'success')
+        _style(btn_vid, 'primary')
+        _style(btn_cnc, 'danger')
+
+        kb = ReplyKeyboardMarkup([[btn_str], [btn_vid], [btn_cnc]], resize_keyboard=True)
+        rules_msg = f"🛡️ 🌟 *{target_task['name']}*\n\n💵 Payout: ৳{target_task['price']}\n\n📝 *Rules:*\n{target_task['rules']}\n\n🚀 Tap START to continue."
+        await update.message.reply_text(rules_msg, parse_mode="Markdown", reply_markup=kb)
+        return
 
     if text == ln["btn_video"] or text == "🎥 ভিডিও দেখুন":
         await update.message.reply_text("🎥 Video Link:\n\nhttps://t.me/range_channele/955")
