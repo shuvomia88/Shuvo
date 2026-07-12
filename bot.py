@@ -8,6 +8,7 @@ import pyotp
 import logging
 import asyncio
 import requests
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
@@ -1381,6 +1382,23 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ============================================================
 
 def main():
+    # Render "Web Service" একটা খোলা পোর্ট আশা করে, নাহলে সার্ভিসটাকে
+    # unhealthy ভেবে বারবার restart করে। বট নিজে কোনো HTTP পোর্ট ব্যবহার
+    # করে না বলে, শুধু Render-কে সন্তুষ্ট রাখতে একটা ছোট্ট ডামি সার্ভার
+    # আলাদা থ্রেডে চালানো হচ্ছে — এটা বটের আসল কাজে কোনো প্রভাব ফেলে না।
+    def _run_dummy_server():
+        port = int(os.environ.get("PORT", 10000))
+        class _Health(BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"Bot is running")
+            def log_message(self, *args):
+                pass  # এই সার্ভারের রিকোয়েস্ট আলাদা করে log করার দরকার নেই
+        HTTPServer(("0.0.0.0", port), _Health).serve_forever()
+
+    threading.Thread(target=_run_dummy_server, daemon=True).start()
+
     _load_task_names()
     _load()  # স্টার্টআপেই Firebase থেকে সব ডেটা load করে ক্যাশে বসিয়ে দেয়
     logger.info("Firebase Realtime Database থেকে ডেটা সফলভাবে load হয়েছে।")
