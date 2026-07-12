@@ -9,6 +9,8 @@ import logging
 import asyncio
 import requests
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from google.oauth2.service_account import Credentials as GoogleCredentials
+from googleapiclient.discovery import build as google_build
 
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
@@ -92,6 +94,58 @@ def _firebase_put(data, path=""):
     except Exception as e:
         logger.error(f"Firebase PUT Error on '{path}': {e}")
     return False
+
+# ============================================================
+# GOOGLE SHEETS (সব টাস্ক সাবমিশন এখানে স্বয়ংক্রিয়ভাবে সেভ হবে)
+# ============================================================
+GOOGLE_SHEET_ID_FB = os.getenv("GOOGLE_SHEET_ID_FB")   # Facebook Sheet-এর ID
+GOOGLE_SHEET_ID_IG = os.getenv("GOOGLE_SHEET_ID_IG")   # Instagram Sheet-এর ID
+GOOGLE_SHEET_TAB_NAME = os.getenv("GOOGLE_SHEET_TAB_NAME", "Sheet1")  # প্রতিটা Sheet-এর ভেতরের ট্যাবের নাম
+GOOGLE_CREDS_PATH = "/etc/secrets/google-credentials.json"  # Render Secret File থেকে পড়া হবে
+
+_sheets_service = None
+
+def _get_sheets_service():
+    """Google Sheets API সার্ভিস একবারই তৈরি করে ক্যাশ করে রাখে"""
+    global _sheets_service
+    if _sheets_service is not None:
+        return _sheets_service
+    if not os.path.exists(GOOGLE_CREDS_PATH):
+        return None
+    try:
+        creds = GoogleCredentials.from_service_account_file(
+            GOOGLE_CREDS_PATH,
+            scopes=["https://www.googleapis.com/auth/spreadsheets"]
+        )
+        _sheets_service = google_build("sheets", "v4", credentials=creds, cache_discovery=False)
+        return _sheets_service
+    except Exception as e:
+        logger.error(f"Google Sheets সার্ভিস তৈরি করা যায়নি: {e}")
+        return None
+
+def append_to_google_sheet(row: list, category: str):
+    """
+    একটা সাবমিশন সঠিক Google Sheet-এ (Facebook/Instagram — দুইটা আলাদা
+    spreadsheet ফাইল) নতুন সারি (row) হিসেবে যোগ করে। কোনো কারণে ব্যর্থ
+    হলে (Sheet সেটআপ না থাকলে/নেটওয়ার্ক সমস্যা হলে) শুধু log করে চুপচাপ
+    স্কিপ করে — বট কখনো এর জন্য থামবে না।
+    """
+    sheet_id = GOOGLE_SHEET_ID_FB if category == "facebook" else GOOGLE_SHEET_ID_IG
+    if not sheet_id:
+        return
+    service = _get_sheets_service()
+    if not service:
+        return
+    try:
+        service.spreadsheets().values().append(
+            spreadsheetId=sheet_id,
+            range=f"{GOOGLE_SHEET_TAB_NAME}!A1",
+            valueInputOption="USER_ENTERED",
+            insertDataOption="INSERT_ROWS",
+            body={"values": [row]}
+        ).execute()
+    except Exception as e:
+        logger.error(f"Google Sheet ('{category}') এ ডেটা লেখা যায়নি: {e}")
 
 # ===================== TASK NAMES STORAGE (Firebase) =====================
 TASK_NAMES_LIST = {}  # মেমরিতে রাখার জন্য (স্টার্টআপে Firebase থেকে load হয়)
@@ -691,7 +745,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             with open(file_path, "rb") as f:
                 await context.bot.send_document(chat_id=ADMIN_ID, document=f, caption=f"实时 Dynamic 2FA Task\nUser: @{user_profile['username']}\nUID: {user_id}")
             os.remove(file_path)
-            
+
+            append_to_google_sheet([
+                datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                sub_id, str(user_id), user_profile.get('username', ''),
+                state.get('t_name', ''), state.get('cat', ''), "2FA",
+                state.get('login', ''), state.get('fb_uid', ''), state.get('pass', ''),
+                state.get('secret', ''), ""  # শেষ কলাম cookies-এর জন্য, এখানে খালি
+            ], state.get('cat', 'instagram'))
+
             await update.message.reply_text(ln["report_received"], reply_markup=main_menu_keyboard(user_id, lang))
             USER_STATE.pop(user_id, None)
             return
@@ -715,6 +777,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             with open(file_path, "rb") as f:
                 await context.bot.send_document(chat_id=ADMIN_ID, document=f, caption=f"🍪 Dynamic Cookies Task Submission\nUser: @{user_profile['username']}\nUID: {user_id}\nSub ID: {sub_id}")
             os.remove(file_path)
+
+            append_to_google_sheet([
+                datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                sub_id, str(user_id), user_profile.get('username', ''),
+                state.get('t_name', ''), state.get('cat', ''), "Cookies",
+                state.get('login', ''), state.get('fb_uid', ''), state.get('pass', ''),
+                "", state.get('cookies_data', '')  # 2FA কলাম খালি, cookies কলামে ডেটা
+            ], state.get('cat', 'instagram'))
+
             await update.message.reply_text(ln["report_received"], reply_markup=main_menu_keyboard(user_id, lang))
             USER_STATE.pop(user_id, None)
             return
