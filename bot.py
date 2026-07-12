@@ -17,11 +17,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # ============================================================
-# CONFIG & FILE SETTINGS
+# CONFIG & FILE SETTINGS (Render Environment Variables)
 # ============================================================
 
-BOT_TOKEN = "8738544813:AAHMBZucZMhEJyA88e-qI43RjzBYyL5_j_c"
-ADMIN_ID = int(os.getenv("ADMIN_ID", "6470499890"))
+# রেন্ডারের Environment Variables থেকে ডাটা নেওয়া হচ্ছে
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_ID = int(os.getenv("ADMIN_ID"))
 
 # বাধ্যতামূলক চ্যানেলগুলোর ইউজারনেম
 REQUIRED_CHANNELS = ["@range_channele", "@insagramth"]
@@ -175,7 +176,6 @@ def _load_all_data():
     """বটের সম্পূর্ণ ডাটাবেজ একবারে ফায়ারবেস থেকে নিয়ে আসে"""
     base_data = firebase_get("users")
     
-    # ডিফল্ট ডাটা স্ট্রাকচার নিশ্চিত করা
     if not isinstance(base_data, dict): base_data = {}
     if "users" not in base_data: base_data["users"] = {}
     if "submissions" not in base_data: base_data["submissions"] = {}
@@ -690,7 +690,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    if text in ["🔥𝗜𝗡𝗦𝗧𝗔𝗚𝗥𝗔𝗠 𝗧𝗔𝗦𝗞", "📘𝗙𝗔𝗖𝗘𝗕𝗢𝗢𝗞 𝗧𝗔𝗦𝗞", "🔥𝗜𝗡𝗦𝗧𝗔𝗚𝗥𝗔`𝗠 𝗧𝗔𝗦𝗞"]:
+    if text in ["🔥𝗜𝗡𝗦𝗧𝗔𝗚𝗥𝗔`𝗠 𝗧𝗔𝗦𝗞", "📘𝗙𝗔𝗖𝗘𝗕𝗢𝗢𝗞 𝗧𝗔𝗦𝗞", "🔥𝗜𝗡𝗦𝗧𝗔𝗚𝗥𝗔𝗠 𝗧𝗔𝗦𝗞"]:
         cat_key = "instagram" if "𝗜𝗡𝗦𝗧𝗔𝗚𝗥𝗔" in text else "facebook"
         if not db_data["visibility"].get(f"{cat_key}_task", True) and user_id != ADMIN_ID:
             await update.message.reply_text(ln["task_hidden"])
@@ -1224,6 +1224,12 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     _load_task_names()
+    
+    # Render-এর পরিবেশ থেকে সরাসরি টোকেন নিয়ে অ্যাপ্লিকেশন তৈরি করা হচ্ছে
+    if not BOT_TOKEN:
+        logger.error("BOT_TOKEN is missing in Render Environment Variables!")
+        return
+        
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT, handle_message))
