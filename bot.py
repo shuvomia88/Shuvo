@@ -951,7 +951,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if target_task:
         tid = target_task["id"]
-        USER_STATE[user_id] = {"task_id": tid, "task_type": target_task["type"], "cat": target_task.get("category")}
+        session_id = str(uuid.uuid4())
+        USER_STATE[user_id] = {"task_id": tid, "task_type": target_task["type"], "cat": target_task.get("category"), "session_id": session_id}
+        asyncio.create_task(task_timeout_watcher(context, user_id, update.effective_chat.id, session_id))
 
         btn_str = KeyboardButton(ln["btn_start"])
         btn_vid = KeyboardButton(ln["btn_video"])
@@ -1293,6 +1295,24 @@ async def delete_message_after_delay(context: ContextTypes.DEFAULT_TYPE, chat_id
     except:
         pass
 
+async def task_timeout_watcher(context: ContextTypes.DEFAULT_TYPE, user_id: int, chat_id: int, session_id: str, delay: int = 600):
+    """
+    কোনো ইউজার একটা টাস্ক শুরু করার পর নির্দিষ্ট সময়ের (ডিফল্ট ১০ মিনিট)
+    মধ্যে সম্পূর্ণ না করলে টাস্কটা স্বয়ংক্রিয়ভাবে বাতিল করে দেয়, আর
+    "Return to main menu" বাটন সহ একটা টাইমআউট মেসেজ পাঠায়।
+    """
+    await asyncio.sleep(delay)
+    current_state = USER_STATE.get(user_id, {})
+    if current_state.get("session_id") != session_id:
+        return  # ইউজার ইতিমধ্যে টাস্ক শেষ করেছে/বাতিল করেছে/অন্য কিছুতে চলে গেছে
+    USER_STATE.pop(user_id, None)
+    btn_ret = InlineKeyboardButton("🔙 Return to main menu", callback_data="return_to_tasks")
+    kb = InlineKeyboardMarkup([[btn_ret]])
+    try:
+        await context.bot.send_message(chat_id=chat_id, text="⏰ Time's up! Task cancelled.", reply_markup=kb)
+    except Exception:
+        pass
+
 async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     if not query or not query.from_user:
@@ -1306,6 +1326,25 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ln = LANGUAGES[lang]
 
     await query.answer()
+
+    if data == "return_to_tasks":
+        btn_ig_cat = KeyboardButton("🔥𝗜𝗡𝗦𝗧𝗔𝗚𝗥𝗔𝗠 𝗧𝗔𝗦𝗞")
+        btn_fb_cat = KeyboardButton("📘𝗙𝗔𝗖𝗘𝗕𝗢𝗢𝗞 𝗧𝗔𝗦𝗞")
+        btn_back = KeyboardButton(ln["btn_back"])
+
+        _style(btn_ig_cat, 'primary')
+        _style(btn_fb_cat, 'success')
+        _style(btn_back, 'danger')
+
+        vertical_keyboard = [
+            [btn_ig_cat],
+            [btn_fb_cat],
+            [btn_back]
+        ]
+        await context.bot.send_message(chat_id=user_id, text=ln["select_cat"], reply_markup=ReplyKeyboardMarkup(vertical_keyboard, resize_keyboard=True))
+        try: await query.delete_message()
+        except: pass
+        return
 
     if data == "verify_join":
         if await is_user_joined_all(context.bot, user_id):
