@@ -282,7 +282,7 @@ def _save(data):
     if not ok:
         logger.error("⚠️ ডেটা Firebase-এ সেভ করা যায়নি! (network/permission সমস্যা হতে পারে)")
 
-def get_or_create_user(user_id: int, username: str = ""):
+def get_or_create_user(user_id: int, username: str = "", referred_by: int = None):
     with _lock:
         data = _load()
         uid = str(user_id)
@@ -294,7 +294,8 @@ def get_or_create_user(user_id: int, username: str = ""):
                 "language": "bn", 
                 "success_count": 0,
                 "review_count": 0,
-                "rejected_count": 0
+                "rejected_count": 0,
+                "referred_by": referred_by
             }
             _save(data)
         return data["users"][uid]
@@ -356,6 +357,7 @@ def main_menu_keyboard(user_id: int, lang: str):
     btn_report = KeyboardButton(ln["btn_report"])
     btn_support = KeyboardButton(ln["btn_support"])
     btn_language = KeyboardButton(ln["btn_language"])
+    btn_refer = KeyboardButton("🔗 Refer" if lang == "en" else "🔗 রেফার করুন")
     
     _style(btn_balance, 'success')
     _style(btn_tasks, 'primary')
@@ -363,11 +365,13 @@ def main_menu_keyboard(user_id: int, lang: str):
     _style(btn_report, 'primary')
     _style(btn_support, 'primary')
     _style(btn_language, 'primary')
+    _style(btn_refer, 'success')
     
     buttons = [
         [btn_balance, btn_tasks],
         [btn_withdraw, btn_report],
-        [btn_support, btn_language]
+        [btn_support, btn_language],
+        [btn_refer]
     ]
     
     if user_id == ADMIN_ID:
@@ -388,8 +392,30 @@ USER_STATE = {}
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    u_data = get_or_create_user(user.id, user.username or "")
+
+    # রেফারেল লিংক দিয়ে এসেছে কিনা চেক করা হচ্ছে (/start ref_<referrer_id>)
+    referrer_id = None
+    if context.args and context.args[0].startswith("ref_"):
+        try:
+            candidate_id = int(context.args[0].replace("ref_", ""))
+            if candidate_id != user.id:  # নিজের লিংক দিয়ে নিজে এলে গণনা হবে না
+                referrer_id = candidate_id
+        except ValueError:
+            pass
+
+    is_new_user = str(user.id) not in _load().get("users", {})
+    u_data = get_or_create_user(user.id, user.username or "", referred_by=referrer_id)
     lang = u_data.get("language", "bn")
+
+    # নতুন ইউজার হলে এবং কারো রেফার লিংক দিয়ে এসে থাকলে, রেফারারকে জানানো হচ্ছে
+    if is_new_user and referrer_id:
+        try:
+            await context.bot.send_message(
+                chat_id=referrer_id,
+                text="🎉 New User Notification\n\n👤 আপনার রেফার লিংক দিয়ে একজন নতুন ইউজার বটে যুক্ত হয়েছে!\n\n💰 Your earn 10% bonus\n✅ Your bonus system is ON — এই ইউজার কোনো রিপোর্ট সফল করলেই আপনি বোনাস পাবেন।"
+            )
+        except Exception:
+            pass
     
     if not await is_user_joined_all(context.bot, user.id):
         await update.message.reply_text(
@@ -980,6 +1006,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         await update.message.reply_text(ln["send_cookies"], reply_markup=ReplyKeyboardMarkup([[btn_cnc]], resize_keyboard=True))
             return
 
+    if text in ["🔗 Refer", "🔗 রেফার করুন"]:
+        bot_username = context.bot.username
+        ref_link = f"https://t.me/{bot_username}?start=ref_{user_id}"
+        if lang == "bn":
+            msg = (
+                f"🔗 বট থেকে রেফার করে ইনকাম করুন!\n\n"
+                f"আপনার রেফার লিংক:\n{ref_link}\n\n"
+                f"এই লিংক বন্ধুদের সাথে শেয়ার করুন। কেউ আপনার লিংক দিয়ে বটে জয়েন করলেই আপনি নোটিফিকেশন পাবেন, "
+                f"আর সে যতবার কোনো টাস্ক রিপোর্ট সফল (approve) করবে, ততবার আপনার ব্যালেন্সে বোনাস যুক্ত হবে।"
+            )
+        else:
+            msg = (
+                f"🔗 Refer From The Bot & Earn!\n\n"
+                f"Your Referral Link:\n{ref_link}\n\n"
+                f"Share this link with friends. When someone joins using your link, you'll get notified, "
+                f"and every time their task report gets approved, you'll earn a bonus in your balance."
+            )
+        await update.message.reply_text(msg)
+        return
+
     if text in ["📤 WITHDRAW", "📤 টাকা তুলুন"]:
         bal = user_profile["balance"]
         btn_wth = InlineKeyboardButton("Withdraw", callback_data="start_withdraw")
@@ -1466,6 +1512,7 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data.startswith("rep_app:") or data.startswith("rep_rej:"):
         sub_id = data.split(":")[1]
         is_approve = data.startswith("rep_app:")
+        referrer_to_notify = None  # লকের বাইরে গিয়ে মেসেজ পাঠানোর জন্য
         with _lock:
             d = _load()
             s_rec = d["submissions"].get(sub_id)
@@ -1480,6 +1527,14 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     d["users"][u_id_str]["review_count"] = max(0, d["users"][u_id_str]["review_count"] - 1)
                     msg = "✅ Approved submission."
                     u_msg = f"✅ Report approved, +${p_add}"
+
+                    # রেফারেল বোনাস — যে ইউজার কারো রেফার লিংক দিয়ে এসেছিল,
+                    # তার রিপোর্ট approve হলে রেফারারকে বোনাস দেওয়া হচ্ছে
+                    referrer_id = d["users"][u_id_str].get("referred_by")
+                    if referrer_id and str(referrer_id) in d["users"]:
+                        REFER_BONUS = 0.0005
+                        d["users"][str(referrer_id)]["balance"] = round(d["users"][str(referrer_id)]["balance"] + REFER_BONUS, 4)
+                        referrer_to_notify = (referrer_id, REFER_BONUS)
                 else:
                     s_rec["status"] = "rejected"
                     d["users"][u_id_str]["rejected_count"] += 1
@@ -1490,6 +1545,11 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.edit_message_text(msg)
                 try: await context.bot.send_message(chat_id=s_rec["user_id"], text=u_msg)
                 except: pass
+                if referrer_to_notify:
+                    r_id, r_amt = referrer_to_notify
+                    try:
+                        await context.bot.send_message(chat_id=r_id, text=f"🎉 Your refer earn ${r_amt}")
+                    except: pass
 
 # ============================================================
 # ADMIN TASK VIDEO UPLOAD HANDLER
