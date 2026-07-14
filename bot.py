@@ -394,6 +394,8 @@ USER_STATE = {}
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
+    if not user or not update.message:
+        return
 
     # রেফারেল লিংক দিয়ে এসেছে কিনা চেক করা হচ্ছে (/start ref_<referrer_id>)
     referrer_id = None
@@ -412,10 +414,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # নতুন ইউজার হলে এবং কারো রেফার লিংক দিয়ে এসে থাকলে, রেফারারকে জানানো হচ্ছে
     if is_new_user and referrer_id:
         try:
-            await context.bot.send_message(
-                chat_id=referrer_id,
-                text="🎉 New User Notification\n\n👤 আপনার রেফার লিংক দিয়ে একজন নতুন ইউজার বটে যুক্ত হয়েছে!\n\n💰 Your earn 10% bonus\n✅ Your bonus system is ON — এই ইউজার কোনো রিপোর্ট সফল করলেই আপনি বোনাস পাবেন।"
-            )
+            referrer_data = _load().get("users", {}).get(str(referrer_id), {})
+            r_lang = referrer_data.get("language", "bn")
+            if r_lang == "bn":
+                notify_text = "🎉 নতুন ইউজার নোটিফিকেশন\n\n👤 আপনার রেফার লিংক দিয়ে একজন নতুন ইউজার বটে যুক্ত হয়েছে!\n\n💰 আপনি ১০% বোনাস পাবেন\n✅ আপনার বোনাস সিস্টেম চালু আছে — এই ইউজার কোনো রিপোর্ট সফল করলেই আপনি বোনাস পাবেন।"
+            else:
+                notify_text = "🎉 New User Notification\n\n👤 A new user has joined the bot using your referral link!\n\n💰 Your earn 10% bonus\n✅ Your bonus system is ON — you'll get a bonus every time this user's report is approved."
+            await context.bot.send_message(chat_id=referrer_id, text=notify_text)
         except Exception:
             pass
     
@@ -432,6 +437,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.effective_user or not update.message or not update.message.text:
+        return  # চ্যানেল পোস্ট বা অস্বাভাবিক আপডেট হলে চুপচাপ স্কিপ করো
     user_id = update.effective_user.id
     text = update.message.text.strip()
     
@@ -445,7 +452,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     if text == "❓ How to get 2fa?":
-        await update.message.reply_text("📹 How to setup 2FA Video Link:\n\nhttps://t.me/range_channele/955")
+        vid_msg = "📹 2FA সেটআপ করার ভিডিও লিংক:\n\nhttps://t.me/range_channele/955" if lang == "bn" else "📹 How to setup 2FA Video Link:\n\nhttps://t.me/range_channele/955"
+        await update.message.reply_text(vid_msg)
         return
 
     # --------------------------------------------------------
@@ -592,7 +600,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             num = USER_STATE[user_id]["number"]
 
             if amt < 0.20:
-                await update.message.reply_text("❌ Minimum withdraw is $0.20")
+                await update.message.reply_text("❌ সর্বনিম্ন উত্তোলন $0.20" if lang == "bn" else "❌ Minimum withdraw is $0.20")
                 USER_STATE.pop(user_id, None)
                 return
             if amt > user_profile["balance"]:
@@ -606,16 +614,29 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             USER_STATE[user_id]["amt"] = amt
             USER_STATE[user_id]["receive"] = receive
 
-            label = "Binance UID" if method == "Binance" else "Number"
-            confirm_text = (
-                f"📋 Please Check Your Info\n\n"
-                f"{'🟡' if method == 'Binance' else '📱'} {label}: {num}\n"
-                f"💳 Method: {method}\n"
-                f"💵 Amount: ${amt}\n"
-                f"💳 Fee: ${charge}\n"
-                f"✅ Receive: ${receive}\n\n"
-                f"✅ If All Information Is Correct, Please Tap the Confirm Button. 👇"
-            )
+            icon = "🟡" if method == "Binance" else "📱"
+            if lang == "bn":
+                label = "Binance UID" if method == "Binance" else "নম্বর"
+                confirm_text = (
+                    f"📋 দয়া করে আপনার তথ্য যাচাই করুন\n\n"
+                    f"{icon} {label}: {num}\n"
+                    f"💳 মাধ্যম: {method}\n"
+                    f"💵 পরিমাণ: ${amt}\n"
+                    f"💳 চার্জ: ${charge}\n"
+                    f"✅ আপনি পাবেন: ${receive}\n\n"
+                    f"✅ সব তথ্য ঠিক থাকলে নিচের Confirm বাটনে চাপুন। 👇"
+                )
+            else:
+                label = "Binance UID" if method == "Binance" else "Number"
+                confirm_text = (
+                    f"📋 Please Check Your Info\n\n"
+                    f"{icon} {label}: {num}\n"
+                    f"💳 Method: {method}\n"
+                    f"💵 Amount: ${amt}\n"
+                    f"💳 Fee: ${charge}\n"
+                    f"✅ Receive: ${receive}\n\n"
+                    f"✅ If All Information Is Correct, Please Tap the Confirm Button. 👇"
+                )
             
             btn_cnf = KeyboardButton(ln["btn_confirm"])
             btn_cnc = KeyboardButton(ln["btn_cancel"])
@@ -626,7 +647,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             USER_STATE[user_id]["step"] = "withdraw_confirm"
             await update.message.reply_text(confirm_text, reply_markup=kb)
         except:
-            await update.message.reply_text("❌ Invalid format.")
+            await update.message.reply_text("❌ ভুল ফরম্যাট।" if lang == "bn" else "❌ Invalid format.")
             USER_STATE.pop(user_id, None)
         return
 
@@ -689,7 +710,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(ln["btn_cancel"], reply_markup=main_menu_keyboard(user_id, lang))
             return
         if len(text.strip()) < 100:
-            await update.message.reply_text("❌ Cookie is too short (minimum 100 characters). Please provide valid cookie data.")
+            await update.message.reply_text("❌ কুকি অনেক ছোট (সর্বনিম্ন ১০০ ক্যারেক্টার লাগবে)। সঠিক কুকি ডেটা দিন।" if lang == "bn" else "❌ Cookie is too short (minimum 100 characters). Please provide valid cookie data.")
             return
         USER_STATE[user_id]["cookies_data"] = text
         USER_STATE[user_id]["step"] = "cookies_submitted"
@@ -827,7 +848,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         _style(btn_cnc, 'danger')
         reg_kb = ReplyKeyboardMarkup([[btn_reg], [btn_cnc]], resize_keyboard=True)
         
-        await update.message.reply_text("👉 2FA Key Received. Now verify and submit using the panel below.", reply_markup=reg_kb)
+        vmsg = "👉 2FA কি পাওয়া গেছে। এবার নিচের প্যানেল থেকে ভেরিফাই করে সাবমিট করুন।" if lang == "bn" else "👉 2FA Key Received. Now verify and submit using the panel below."
+        await update.message.reply_text(vmsg, reply_markup=reg_kb)
 
         btn_ref = InlineKeyboardButton("🔄 Refresh", callback_data="refresh_2fa_code")
         _style(btn_ref, 'primary')
@@ -949,9 +971,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         task_id = state.get("task_id")
         t_data = db_data.get("dynamic_tasks", {}).get(task_id) if task_id else None
         if t_data and t_data.get("video_file_id"):
-            await update.message.reply_video(video=t_data["video_file_id"], caption=f"🎥 {t_data['name']} — কীভাবে কাজটি করবেন")
+            cap = f"🎥 {t_data['name']} — কীভাবে কাজটি করবেন" if lang == "bn" else f"🎥 {t_data['name']} — How to complete this task"
+            await update.message.reply_video(video=t_data["video_file_id"], caption=cap)
         else:
-            await update.message.reply_text("❌ এই টাস্কের জন্য এখনো কোনো ভিডিও যুক্ত করা হয়নি।")
+            await update.message.reply_text("❌ এই টাস্কের জন্য এখনো কোনো ভিডিও যুক্ত করা হয়নি।" if lang == "bn" else "❌ No video has been assigned to this task yet.")
         return
 
     if text == ln["btn_start"]:
@@ -1272,6 +1295,8 @@ async def delete_message_after_delay(context: ContextTypes.DEFAULT_TYPE, chat_id
 
 async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    if not query or not query.from_user:
+        return
     user_id = query.from_user.id
     data = query.data
     
@@ -1522,15 +1547,23 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             d = _load()
             w_rec = d["withdrawals"].get(w_id)
             if w_rec and w_rec["status"] == "pending":
+                w_lang = d["users"].get(str(w_rec["user_id"]), {}).get("language", "bn")
                 if is_approve:
                     w_rec["status"] = "approved"
                     d["users"][str(w_rec["user_id"])]["balance"] = round(d["users"][str(w_rec["user_id"])]["balance"] - w_rec["amount"], 2)
                     msg = f"✅ Approved ${w_rec['amount']}"
-                    u_msg = "✅ Your withdrawal request has been verified and approved by the admin."
+                    if w_rec["method"] == "Binance":
+                        num_label = "Binance UID" 
+                    else:
+                        num_label = "নম্বর" if w_lang == "bn" else "Number"
+                    if w_lang == "bn":
+                        u_msg = f"✅ উত্তোলন সফল হয়েছে\n\n{num_label}: {w_rec['number']}\nমাধ্যম: {w_rec['method']}\nপরিমাণ: ${w_rec['amount']}"
+                    else:
+                        u_msg = f"✅ Withdrawal Successful\n\n{num_label}: {w_rec['number']}\nMethod: {w_rec['method']}\nAmount: ${w_rec['amount']}"
                 else:
                     w_rec["status"] = "rejected"
                     msg = "❌ Rejected"
-                    u_msg = "❌ Your withdrawal request has been rejected."
+                    u_msg = "❌ আপনার উত্তোলন অনুরোধটি বাতিল করা হয়েছে।" if w_lang == "bn" else "❌ Your withdrawal request has been rejected."
                 _save(d)
                 await query.edit_message_text(msg)
                 try: await context.bot.send_message(chat_id=w_rec["user_id"], text=u_msg)
@@ -1554,7 +1587,8 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     d["users"][u_id_str]["success_count"] += 1
                     d["users"][u_id_str]["review_count"] = max(0, d["users"][u_id_str]["review_count"] - 1)
                     msg = "✅ Approved submission."
-                    u_msg = f"✅ Report approved, +${p_add}"
+                    u_lang = d["users"][u_id_str].get("language", "bn")
+                    u_msg = f"✅ রিপোর্ট গৃহীত হয়েছে, +${p_add}" if u_lang == "bn" else f"✅ Report approved, +${p_add}"
 
                     # রেফারেল বোনাস — যে ইউজার কারো রেফার লিংক দিয়ে এসেছিল,
                     # তার রিপোর্ট approve হলে রেফারারকে বোনাস দেওয়া হচ্ছে
@@ -1562,21 +1596,24 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     if referrer_id and str(referrer_id) in d["users"]:
                         REFER_BONUS = 0.0005
                         d["users"][str(referrer_id)]["balance"] = round(d["users"][str(referrer_id)]["balance"] + REFER_BONUS, 4)
-                        referrer_to_notify = (referrer_id, REFER_BONUS)
+                        r_lang = d["users"][str(referrer_id)].get("language", "bn")
+                        referrer_to_notify = (referrer_id, REFER_BONUS, r_lang)
                 else:
                     s_rec["status"] = "rejected"
                     d["users"][u_id_str]["rejected_count"] += 1
                     d["users"][u_id_str]["review_count"] = max(0, d["users"][u_id_str]["review_count"] - 1)
                     msg = "❌ Rejected submission."
-                    u_msg = "❌ Your Report Has Been Rejected 🥹"
+                    u_lang = d["users"][u_id_str].get("language", "bn")
+                    u_msg = "❌ আপনার রিপোর্টটি বাতিল করা হয়েছে 🥹" if u_lang == "bn" else "❌ Your Report Has Been Rejected 🥹"
                 _save(d)
                 await query.edit_message_text(msg)
                 try: await context.bot.send_message(chat_id=s_rec["user_id"], text=u_msg)
                 except: pass
                 if referrer_to_notify:
-                    r_id, r_amt = referrer_to_notify
+                    r_id, r_amt, r_lang = referrer_to_notify
+                    r_msg = f"🎉 আপনার রেফার থেকে আয় হলো ${r_amt}" if r_lang == "bn" else f"🎉 Your refer earn ${r_amt}"
                     try:
-                        await context.bot.send_message(chat_id=r_id, text=f"🎉 Your refer earn ${r_amt}")
+                        await context.bot.send_message(chat_id=r_id, text=r_msg)
                     except: pass
 
 # ============================================================
@@ -1587,6 +1624,8 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     এডমিন 'Work Video' ফিচার দিয়ে যখন কোনো টাস্কের জন্য ভিডিও আপলোড করেন,
     তখন এটা ধরে সেই টাস্কের সাথে ভিডিওটা যুক্ত করে দেয়।
     """
+    if not update.effective_user or not update.message or not update.message.video:
+        return
     user_id = update.effective_user.id
     if user_id != ADMIN_ID:
         return
@@ -1628,9 +1667,9 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
 
     logger.error(f"হ্যান্ডলারে সমস্যা হয়েছে: {err}", exc_info=err)
 
-    # ঠিক কোথায় (কোন ফাইলের কোন লাইনে) এররটা হয়েছে সেটা বের করা হচ্ছে,
-    # যাতে এডমিনকে পাঠানো মেসেজ থেকেই বোঝা যায় সমস্যাটা কোথায় — Render
-    # Logs খুলে খোঁজার দরকার না পড়ে।
+    # ঠিক কোথায় (কোন ফাইলের কোন লাইনে) এররটা হয়েছে সেটা বের করে শুধু
+    # Render Logs-এ রাখা হচ্ছে (এডমিনের Telegram ইনবক্সে আর কোনো এরর
+    # মেসেজ পাঠানো হবে না, বট নিঃশব্দে সামলে নেবে)।
     location = ""
     try:
         tb = err.__traceback__
@@ -1640,17 +1679,8 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
         fname = os.path.basename(last_frame.tb_frame.f_code.co_filename)
         func_name = last_frame.tb_frame.f_code.co_name
         line_no = last_frame.tb_lineno
-        location = f"\n\n📍 {fname} → {func_name}() → line {line_no}"
-    except Exception:
-        pass
-
-    # চাইলে এডমিনকে জানিয়ে দেওয়া, কিন্তু এটাও ব্যর্থ হলে যেন বট না থামে
-    try:
-        if ADMIN_ID:
-            await context.bot.send_message(
-                chat_id=ADMIN_ID,
-                text=f"⚠️ বটে একটা এরর হয়েছে (স্বয়ংক্রিয়ভাবে সামলানো হয়েছে):\n\n{type(err).__name__}: {err}{location}"
-            )
+        location = f"{fname} → {func_name}() → line {line_no}"
+        logger.error(f"📍 এররের অবস্থান: {location}")
     except Exception:
         pass
 
