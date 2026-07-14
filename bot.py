@@ -135,7 +135,7 @@ LANGUAGES = {
         "btn_how_to_2fa": "❓ How to get 2fa?",
         "select_lang": "🌐 Select Language / ভাষা নির্বাচন করুন:",
         "lang_changed": "✅ Language changed to English!",
-        "balance_msg": "💳 Your Balance: {bal} ৳",
+        "balance_msg": "💳 Your Balance: ${bal}",
         "report_msg": "📊 All Account Report\n\n✅ Success: [{s}]\n⏳ Reviewing: [{r}]\n❌ Rejected: [{rej}]",
         "select_cat": "📋 Select Category:",
         "task_hidden": "❌ This task is currently hidden by Admin.",
@@ -145,14 +145,14 @@ LANGUAGES = {
         "send_cookies": "👉 Please Send Your Cookies Data",
         "send_fb_uid": "👉 Please Send Your Facebook UID",
         "invalid_2fa": "❌ Invalid 2FA Secret Key! Please send a valid key again:",
-        "withdraw_dash": "💳 Your Balance Dashboard\n\n💰 Balance: {bal} ৳\n💸 Minimum Withdraw (bKash/Nagad): 25 ৳\n💳 Withdrawal Charge: 5 ৳\n✅ You Will Receive: {rec} ৳\n\n🟡 Binance: Minimum $0.20 (Fee $0.03)",
-        "withdraw_min_err": "❌ Unsuccessful balance: Minimum 25 ৳ required",
+        "withdraw_dash": "💳 Your Balance Dashboard\n\n💰 Balance: ${bal}\n💸 Minimum Withdraw: $0.20\n💳 Withdrawal Charge: $0.03\n✅ You Will Receive: ${rec}",
+        "withdraw_min_err": "❌ Unsuccessful balance: Minimum $0.20 required",
         "select_meth": "💳 Select Your Withdraw Method:",
         "send_num": "📱 Please Send Your {method} Number",
         "enter_amt": "💰 Please Enter Your Withdraw Amount:",
         "insufficient": "❌ Insufficient balance.",
-        "min_amt_err": "❌ Minimum withdraw is 25 ৳",
-        "check_info": "📋 Please Check Your Info\n\n📱 Number: {num}\n💳 Method: {method}\n💵 Amount: {amt} ৳\n✅ Receive: {rec} ৳\n\n✅ If All Information Is Correct, Please Tap the Confirm Button. 👇",
+        "min_amt_err": "❌ Minimum withdraw is $0.20",
+        "check_info": "📋 Please Check Your Info\n\n📱 Number: {num}\n💳 Method: {method}\n💵 Amount: ${amt}\n✅ Receive: ${rec}\n\n✅ If All Information Is Correct, Please Tap the Confirm Button. 👇",
         "btn_confirm": "✅ Confirm",
         "pay_pending": "⏳ Your Payment Is Pending.\n\n👨‍💼 Please Wait for Admin Approval.",
         "cookies_rec": "👉 Cookies Received. Click below to proceed.",
@@ -184,7 +184,7 @@ LANGUAGES = {
         "btn_how_to_2fa": "❓ How to get 2fa?",
         "select_lang": "🌐 Select Language / ভাষা নির্বাচন করুন:",
         "lang_changed": "✅ ভাষা পরিবর্তন করে বাংলায় সেট করা হয়েছে!",
-        "balance_msg": "💳 আপনার বর্তমান ব্যালেন্স: {bal} ৳",
+        "balance_msg": "💳 আপনার বর্তমান ব্যালেন্স: ${bal}",
         "report_msg": "📊 সকল অ্যাকাউন্ট রিপোর্ট\n\n✅ সফল: [{s}]\n⏳ রিভিউতে আছে: [{r}]\n❌ বাতিল হয়েছে: [{rej}]",
         "select_cat": "📋 ক্যাটাগরি নির্বাচন করুন:",
         "task_hidden": "❌ এই কাজটি বর্তমানে এডমিন দ্বারা হাইড করা আছে।",
@@ -194,14 +194,14 @@ LANGUAGES = {
         "send_cookies": "👉 অনুগ্রহ করে আপনার কুকিজ (Cookies) ডাটা পাঠান",
         "send_fb_uid": "👉 অনুগ্রহ করে আপনার ফেসবুক ইউআইডি (Facebook UID) পাঠান",
         "invalid_2fa": "❌ ভুল 2FA সিক্রেট কি! দয়া করে আবার সঠিক কি পাঠান:",
-        "withdraw_dash": "💳 আপনার ব্যালেন্স ড্যাশবোর্ড\n\n💰 ব্যালেন্স: {bal} ৳\n💸 সর্বনিম্ন উইথড্র (bKash/Nagad): ২৫ ৳\n💳 উইথড্র চার্জ: ৫ ৳\n✅ আপনি পাবেন: {rec} ৳\n\n🟡 Binance: সর্বনিম্ন $0.20 (ফি $0.03)",
-        "withdraw_min_err": "❌ Unsuccessful balance: Minimum 25 ৳ required",
+        "withdraw_dash": "💳 আপনার ব্যালেন্স ড্যাশবোর্ড\n\n💰 ব্যালেন্স: ${bal}\n💸 সর্বনিম্ন উইথড্র: $0.20\n💳 উইথড্র চার্জ: $0.03\n✅ আপনি পাবেন: ${rec}",
+        "withdraw_min_err": "❌ Unsuccessful balance: Minimum $0.20 required",
         "select_meth": "💳 আপনার উইথড্র পদ্ধতি নির্বাচন করুন:",
         "send_num": "📱 অনুগ্রহ করে আপনার {method} নম্বরটি পাঠান",
         "enter_amt": "💰 অনুগ্রহ করে আপনার উইথড্র অ্যামাউন্ট লিখুন:",
         "insufficient": "❌ আপনার পর্যাপ্ত ব্যালেন্স নেই।",
-        "min_amt_err": "❌ সর্বনিম্ন উইথড্র ২৫ ৳",
-        "check_info": "📋 দয়া করে আপনার তথ্য যাচাই করুন\n\n📱 নম্বর: {num}\n💳 মাধ্যম: {method}\n💵 পরিমাণ: {amt} ৳\n✅ আপনি পাবেন: {rec} ৳\n\n✅ সব তথ্য ঠিক থাকলে নিচের কন্ডিশন বাটনে চাপুন। 👇",
+        "min_amt_err": "❌ সর্বনিম্ন উইথড্র $0.20",
+        "check_info": "📋 দয়া করে আপনার তথ্য যাচাই করুন\n\n📱 নম্বর: {num}\n💳 মাধ্যম: {method}\n💵 পরিমাণ: ${amt}\n✅ আপনি পাবেন: ${rec}\n\n✅ সব তথ্য ঠিক থাকলে নিচের কন্ডিশন বাটনে চাপুন। 👇",
         "btn_confirm": "✅ কনফার্ম করুন",
         "pay_pending": "⏳ আপনার পেমেন্ট পেন্ডিং অবস্থায় আছে।\n\n👨‍💼 অনুগ্রহ করে এডমিনের অনুমোদনের জন্য অপেক্ষা করুন।",
         "cookies_rec": "👉 কুকিজ পাওয়া গেছে। সামনে এগিয়ে যেতে নিচের বাটনে চাপুন।",
@@ -534,9 +534,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if target in data["users"]:
                     data["users"][target]["balance"] = round(data["users"][target]["balance"] + amount, 2)
                     _save(data)
-                    await update.message.reply_text(f"✅ Added ৳{amount} to UID {target}")
+                    await update.message.reply_text(f"✅ Added ${amount} to UID {target}")
                     try:
-                        await context.bot.send_message(chat_id=int(target), text=f"💰 Admin added ৳{amount} to your balance!")
+                        await context.bot.send_message(chat_id=int(target), text=f"💰 Admin added ${amount} to your balance!")
                     except:
                         pass
                 else:
@@ -562,52 +562,32 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             amt = float(text)
             method = USER_STATE[user_id]["method"]
             num = USER_STATE[user_id]["number"]
-            USD_TO_BDT = 124.0
 
-            if method == "Binance":
-                if amt < 0.20:
-                    await update.message.reply_text("❌ Minimum withdraw is $0.20")
-                    USER_STATE.pop(user_id, None)
-                    return
-                charge_usd = 0.03
-                receive_usd = round(amt - charge_usd, 4)
-                taka_equivalent = round(amt * USD_TO_BDT, 2)
+            if amt < 0.20:
+                await update.message.reply_text("❌ Minimum withdraw is $0.20")
+                USER_STATE.pop(user_id, None)
+                return
+            if amt > user_profile["balance"]:
+                await update.message.reply_text(ln["insufficient"])
+                USER_STATE.pop(user_id, None)
+                return
 
-                if taka_equivalent > user_profile["balance"]:
-                    await update.message.reply_text(ln["insufficient"])
-                    USER_STATE.pop(user_id, None)
-                    return
+            charge = 0.03
+            receive = round(amt - charge, 4)
 
-                USER_STATE[user_id]["amt"] = taka_equivalent  # ব্যালেন্স থেকে টাকায় কাটা হবে
-                USER_STATE[user_id]["display_amt"] = amt
-                USER_STATE[user_id]["receive"] = receive_usd
+            USER_STATE[user_id]["amt"] = amt
+            USER_STATE[user_id]["receive"] = receive
 
-                confirm_text = (
-                    f"📋 Please Check Your Info\n\n"
-                    f"🟡 Binance UID: {num}\n"
-                    f"💳 Method: {method}\n"
-                    f"💵 Amount: ${amt}\n"
-                    f"💳 Fee: ${charge_usd}\n"
-                    f"✅ Receive: ${receive_usd}\n\n"
-                    f"✅ If All Information Is Correct, Please Tap the Confirm Button. 👇"
-                )
-            else:
-                if amt > user_profile["balance"]:
-                    await update.message.reply_text(ln["insufficient"])
-                    USER_STATE.pop(user_id, None)
-                    return
-                if amt < 25:
-                    await update.message.reply_text(ln["min_amt_err"])
-                    USER_STATE.pop(user_id, None)
-                    return
-
-                charge = 5.0
-                receive = amt - charge
-
-                USER_STATE[user_id]["amt"] = amt
-                USER_STATE[user_id]["receive"] = receive
-
-                confirm_text = ln["check_info"].format(num=num, method=method, amt=amt, rec=receive)
+            label = "Binance UID" if method == "Binance" else "Number"
+            confirm_text = (
+                f"📋 Please Check Your Info\n\n"
+                f"{'🟡' if method == 'Binance' else '📱'} {label}: {num}\n"
+                f"💳 Method: {method}\n"
+                f"💵 Amount: ${amt}\n"
+                f"💳 Fee: ${charge}\n"
+                f"✅ Receive: ${receive}\n\n"
+                f"✅ If All Information Is Correct, Please Tap the Confirm Button. 👇"
+            )
             
             btn_cnf = KeyboardButton(ln["btn_confirm"])
             btn_cnc = KeyboardButton(ln["btn_cancel"])
@@ -641,17 +621,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             _style(btn_w_rj, 'danger')
             
             admin_kb = InlineKeyboardMarkup([[btn_w_ap, btn_w_rj]])
-            if state["method"] == "Binance":
-                admin_text = (
-                    f"💸 New Payment Request (Binance)\n\n"
-                    f"👤 User: @{user_profile['username']}\n🆔 UID: {user_id}\n"
-                    f"🟡 Binance UID: {state['number']}\n"
-                    f"💵 Amount: ${state.get('display_amt', '')}\n"
-                    f"✅ Send: ${state.get('receive', '')}\n"
-                    f"(💰 ব্যালেন্স থেকে কাটা হবে: {state['amt']} ৳)"
-                )
-            else:
-                admin_text = f"💸 New Payment Request\n\n👤 User: @{user_profile['username']}\n🆔 UID: {user_id}\n📱 Number: {state['number']}\n💳 Method: {state['method']}\n💰 Amount: {state['amt']} ৳"
+            label = "Binance UID" if state["method"] == "Binance" else "Number"
+            admin_text = (
+                f"💸 New Payment Request\n\n"
+                f"👤 User: @{user_profile['username']}\n🆔 UID: {user_id}\n"
+                f"{'🟡' if state['method'] == 'Binance' else '📱'} {label}: {state['number']}\n"
+                f"💳 Method: {state['method']}\n"
+                f"💵 Amount: ${state['amt']}\n"
+                f"✅ Send: ${state.get('receive', '')}"
+            )
             await context.bot.send_message(
                 chat_id=ADMIN_ID,
                 text=admin_text,
@@ -903,7 +881,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         sub_tasks = []
         for t in active_tasks:
-            btn_t = KeyboardButton(f"{t['name']} ({t['price']} ৳)")
+            btn_t = KeyboardButton(f"{t['name']} (${t['price']})")
             _style(btn_t, 'success')
             sub_tasks.append([btn_t])
             
@@ -916,7 +894,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     all_tasks_for_match = db_data.get("dynamic_tasks", {})
     target_task = None
     for tid, t in all_tasks_for_match.items():
-        label = f"{t['name']} ({t['price']} ৳)"
+        label = f"{t['name']} (${t['price']})"
         if text == label:
             target_task = t
             break
@@ -934,7 +912,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         _style(btn_cnc, 'danger')
 
         kb = ReplyKeyboardMarkup([[btn_str], [btn_vid], [btn_cnc]], resize_keyboard=True)
-        rules_msg = f"🛡️ 🌟 *{target_task['name']}*\n\n💵 Payout: ৳{target_task['price']}\n\n📝 *Rules:*\n{target_task['rules']}\n\n🚀 Tap START to continue."
+        rules_msg = f"🛡️ 🌟 *{target_task['name']}*\n\n💵 Payout: ${target_task['price']}\n\n📝 *Rules:*\n{target_task['rules']}\n\n🚀 Tap START to continue."
         await update.message.reply_text(rules_msg, parse_mode="Markdown", reply_markup=kb)
         return
 
@@ -1004,19 +982,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if text in ["📤 WITHDRAW", "📤 টাকা তুলুন"]:
         bal = user_profile["balance"]
-        
-        if bal < 50:
-            btn_fake = InlineKeyboardButton("⚠️ Insufficient Balance", callback_data="popup_error_alert")
-            await update.message.reply_text(
-                "❌ Click below to see your error status:",
-                reply_markup=InlineKeyboardMarkup([[btn_fake]])
-            )
-            return
-            
         btn_wth = InlineKeyboardButton("Withdraw", callback_data="start_withdraw")
         _style(btn_wth, 'success')
         inline_wb = InlineKeyboardMarkup([[btn_wth]])
-        await update.message.reply_text(ln["withdraw_dash"].format(bal=bal, rec=max(0.0, bal - 5.0)), reply_markup=inline_wb)
+        await update.message.reply_text(ln["withdraw_dash"].format(bal=bal, rec=max(0.0, bal - 0.03)), reply_markup=inline_wb)
         return
 
     # --- ADMIN CONTROL DASHBOARD PANEL ---
@@ -1237,12 +1206,6 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = user_profile.get("language", "bn")
     ln = LANGUAGES[lang]
 
-    if data == "popup_error_alert":
-        await query.answer(text="❌ Unsuccessful balance: Minimum 50 ৳ required", show_alert=True)
-        try: await query.delete_message()
-        except: pass
-        return
-
     await query.answer()
 
     if data == "verify_join":
@@ -1310,7 +1273,7 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         task_name = parts[2] if len(parts) > 2 else None
         if task_name:
             USER_STATE[user_id] = {"category": cat, "step": "admin_task_name", "selected_task_name": task_name}
-            await query.message.reply_text(f"📝 Task: {task_name}\n📁 Category: {cat}\n\n💰 টাস্কের মূল্য দিন (Price in ৳):")
+            await query.message.reply_text(f"📝 Task: {task_name}\n📁 Category: {cat}\n\n💰 টাস্কের মূল্য দিন (Price in $):")
             try: await query.delete_message()
             except: pass
         else:
@@ -1329,7 +1292,7 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         buttons = []
         for t in active_tasks:
-            btn_t_del = InlineKeyboardButton(f"🗑️ {t['name']} ({t['price']}৳)", callback_data=f"adm_do_del:{t['id']}")
+            btn_t_del = InlineKeyboardButton(f"🗑️ {t['name']} (${t['price']})", callback_data=f"adm_do_del:{t['id']}")
             _style(btn_t_del, 'danger')
             buttons.append([btn_t_del])
             
@@ -1400,7 +1363,7 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 _save(d)
                 
             USER_STATE.pop(user_id, None)
-            await query.message.reply_text(f"✅ সফলভাবে নতুন টাস্ক সিস্টেমে সেভ করা হয়েছে!\n\n📌 নাম: {new_task['name']}\n💵 পেমেন্ট: {new_task['price']} ৳\n🎯 টাইপ: {new_task['type'].upper()}")
+            await query.message.reply_text(f"✅ সফলভাবে নতুন টাস্ক সিস্টেমে সেভ করা হয়েছে!\n\n📌 নাম: {new_task['name']}\n💵 পেমেন্ট: ${new_task['price']}\n🎯 টাইপ: {new_task['type'].upper()}")
             try: await query.delete_message()
             except: pass
         return
@@ -1417,9 +1380,6 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data == "start_withdraw":
-        if user_profile["balance"] < 25:
-            await query.answer(ln["withdraw_min_err"], show_alert=True)
-            return
         USER_STATE[user_id] = {"step": "withdraw_method"}
         
         btn_bks = InlineKeyboardButton("bKash", callback_data="w_meth:bKash")
@@ -1491,7 +1451,7 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if is_approve:
                     w_rec["status"] = "approved"
                     d["users"][str(w_rec["user_id"])]["balance"] = round(d["users"][str(w_rec["user_id"])]["balance"] - w_rec["amount"], 2)
-                    msg = f"✅ Approved ৳{w_rec['amount']}"
+                    msg = f"✅ Approved ${w_rec['amount']}"
                     u_msg = "✅ Your withdrawal request has been verified and approved by the admin."
                 else:
                     w_rec["status"] = "rejected"
@@ -1519,7 +1479,7 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     d["users"][u_id_str]["success_count"] += 1
                     d["users"][u_id_str]["review_count"] = max(0, d["users"][u_id_str]["review_count"] - 1)
                     msg = "✅ Approved submission."
-                    u_msg = f"✅ Report approved, +৳{p_add}"
+                    u_msg = f"✅ Report approved, +${p_add}"
                 else:
                     s_rec["status"] = "rejected"
                     d["users"][u_id_str]["rejected_count"] += 1
