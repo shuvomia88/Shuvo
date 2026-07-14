@@ -10,6 +10,8 @@ import logging
 import asyncio
 import requests
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment
 
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
@@ -1094,19 +1096,45 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 task_name = entry.get("task", "অজানা টাস্ক")
                 grouped.setdefault(task_name, []).append(entry)
 
-            blocks = []
-            for task_name, entries in grouped.items():
-                lines = [f"📌 TASK: {task_name}", "=" * 30]
-                for e in entries:
-                    line = f"{e.get('username','')}    {e.get('password','')}"
-                    if e.get("twofa"):
-                        line += f"    {e['twofa']}"
-                    lines.append(line)
-                blocks.append("\n".join(lines))
+            # ---------- Excel (.xlsx) ফাইল তৈরি ----------
+            wb = Workbook()
+            ws = wb.active
+            ws.title = label[:31]
 
-            file_path = f"{key}_{uuid.uuid4().hex[:6]}.txt"
-            with open(file_path, "w", encoding="utf-8") as f:
-                f.write("\n\n".join(blocks))
+            headers = ["Task Name", "Username", "Password", "2FA"]
+            ws.append(headers)
+            header_fill = PatternFill(start_color="305496", end_color="305496", fill_type="solid")
+            header_font = Font(name="Arial", bold=True, color="FFFFFF")
+            for col_idx, _ in enumerate(headers, start=1):
+                cell = ws.cell(row=1, column=col_idx)
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+
+            group_fills = [
+                PatternFill(start_color="DCE6F1", end_color="DCE6F1", fill_type="solid"),
+                PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid"),
+            ]
+            row_num = 2
+            for g_idx, (task_name, entries) in enumerate(grouped.items()):
+                fill = group_fills[g_idx % 2]
+                for e in entries:
+                    ws.cell(row=row_num, column=1, value=task_name).fill = fill
+                    ws.cell(row=row_num, column=2, value=e.get("username", "")).fill = fill
+                    ws.cell(row=row_num, column=3, value=e.get("password", "")).fill = fill
+                    ws.cell(row=row_num, column=4, value=e.get("twofa", "")).fill = fill
+                    for col_idx in range(1, 5):
+                        ws.cell(row=row_num, column=col_idx).font = Font(name="Arial")
+                    row_num += 1
+
+            ws.column_dimensions["A"].width = 28
+            ws.column_dimensions["B"].width = 22
+            ws.column_dimensions["C"].width = 18
+            ws.column_dimensions["D"].width = 22
+            ws.freeze_panes = "A2"
+
+            file_path = f"{key}_{uuid.uuid4().hex[:6]}.xlsx"
+            wb.save(file_path)
 
             # ফাইল পাঠানোর পর এই ক্যাটাগরির ডাম্প খালি করে দেওয়া হচ্ছে,
             # যাতে পরের বার শুধু নতুন সাবমিশনগুলোই থাকে
@@ -1116,7 +1144,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         with open(file_path, "rb") as f:
             await update.message.reply_document(
                 document=f,
-                filename=f"{label}_Submissions.txt",
+                filename=f"{label}_Submissions.xlsx",
                 caption=f"📄 মোট {len(dump_list)} টি {label} সাবমিশন, {len(grouped)} টি টাস্কে ভাগ করা। (এই ফাইল পাঠানোর সাথে সাথে লিস্ট খালি হয়ে গেছে, এখন থেকে নতুন সাবমিশন জমা হবে।)"
             )
         os.remove(file_path)
