@@ -137,7 +137,7 @@ LANGUAGES = {
         "btn_how_to_2fa": "❓ How to get 2fa?",
         "select_lang": "🌐 Select Language / ভাষা নির্বাচন করুন:",
         "lang_changed": "✅ Language changed to English!",
-        "balance_msg": "💳 Your Balance: ${bal}",
+        "balance_msg": "💳 Wallet Balance: ${bal}",
         "report_msg": "📊 All Account Report\n\n✅ Success: [{s}]\n⏳ Reviewing: [{r}]\n❌ Rejected: [{rej}]",
         "select_cat": "📋 Select Category:",
         "task_hidden": "❌ This task is currently hidden by Admin.",
@@ -163,7 +163,7 @@ LANGUAGES = {
         "invite_check_short": "✅ Please confirm below to submit your report.",
         "btn_subbed": "✅ Yes | I Am Subscribed",
         "thanks_msg": "✅ Thanks! Please Do Not Unfollow. Follow the Rules.",
-        "report_received": "✅ Your report has been received!\n⏳ Please wait 16–24 hours.",
+        "report_received": "✅ Your report has been received!\n⏳ Please wait for report",
         "no_usernames_err": "❌ No user available yet!",
         "force_join_msg": "📢 আমাদের বটটি ব্যবহার করতে নিচের চ্যানেলগুলোতে জয়েন করুন:",
         "not_joined_all": "❌ আপনি এখনো সবগুলো চ্যানেলে জয়েন করেননি! দয়া করে জয়েন করে আবার ভেরিফাই করুন।",
@@ -186,7 +186,7 @@ LANGUAGES = {
         "btn_how_to_2fa": "❓ How to get 2fa?",
         "select_lang": "🌐 Select Language / ভাষা নির্বাচন করুন:",
         "lang_changed": "✅ ভাষা পরিবর্তন করে বাংলায় সেট করা হয়েছে!",
-        "balance_msg": "💳 আপনার বর্তমান ব্যালেন্স: ${bal}",
+        "balance_msg": "💳 ওয়ালেট ব্যালেন্স: ${bal}",
         "report_msg": "📊 সকল অ্যাকাউন্ট রিপোর্ট\n\n✅ সফল: [{s}]\n⏳ রিভিউতে আছে: [{r}]\n❌ বাতিল হয়েছে: [{rej}]",
         "select_cat": "📋 ক্যাটাগরি নির্বাচন করুন:",
         "task_hidden": "❌ এই কাজটি বর্তমানে এডমিন দ্বারা হাইড করা আছে।",
@@ -212,7 +212,7 @@ LANGUAGES = {
         "invite_check_short": "✅ নিচে কনফার্ম করে আপনার রিপোর্ট সাবমিট করুন।",
         "btn_subbed": "✅ হ্যাঁ | আমি সাবসক্রাইব করেছি",
         "thanks_msg": "✅ ধন্যবাদ! অনুগ্রহ করে আনফলো করবেন না। নিয়ম মেনে চলুন।",
-        "report_received": "✅ আপনার রিপোর্টটি গ্রহণ করা হয়েছে!\n⏳ অনুগ্রহ করে ১৬–২৪ ঘণ্টা অপেক্ষা করুন।",
+        "report_received": "✅ আপনার রিপোর্টটি গ্রহণ করা হয়েছে!\n⏳ রিপোর্টের জন্য অপেক্ষা করুন",
         "no_usernames_err": "❌ বর্তমানে কোনো ইউজার খালি নেই!",
         "force_join_msg": "📢 আমাদের বটটি ব্যবহার করতে নিচের চ্যানেলগুলোতে জয়েন করুন:",
         "not_joined_all": "❌ আপনি এখনো সবগুলো চ্যানেলে জয়েন করেননি! দয়া করে জয়েন করে আবার ভেরিফাই করুন।",
@@ -736,9 +736,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if state.get("step") == "cookies_submitted":
                 await update.message.reply_text(ln["invite_check"], reply_markup=kb)
                 USER_STATE[user_id]["step"] = "cookies_final_confirm"
+                cred_msg_id = state.get("cred_msg_id")
+                if cred_msg_id:
+                    try: await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=cred_msg_id)
+                    except: pass
             else:
                 await update.message.reply_text(ln["invite_check_short"], reply_markup=kb)
                 USER_STATE[user_id]["step"] = "2fa_final_confirm"
+                cred_msg_id = state.get("cred_msg_id")
+                if cred_msg_id:
+                    try: await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=cred_msg_id)
+                    except: pass
             return
 
     if text == ln["btn_subbed"]:
@@ -870,7 +878,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # --- MENU NAVIGATION ---
     if text in ["💳 BALANCE", "💳 ব্যালেন্স"]:
-        await update.message.reply_text(ln["balance_msg"].format(bal=user_profile['balance']), reply_markup=main_menu_keyboard(user_id, lang))
+        await update.message.reply_text(ln["balance_msg"].format(bal=f"{user_profile['balance']:.5f}"), reply_markup=main_menu_keyboard(user_id, lang))
         return
 
     if text in ["📊 YOUR REPORT", "📊 আপনার রিপোর্ট"]:
@@ -895,6 +903,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         kb = InlineKeyboardMarkup([[btn_bn, btn_en]])
         await update.message.reply_text(ln["select_lang"], reply_markup=kb)
+        return
+
+    if text == "🔙 Return to main menu":
+        btn_ig_cat = KeyboardButton("🔥𝗜𝗡𝗦𝗧𝗔𝗚𝗥𝗔𝗠 𝗧𝗔𝗦𝗞")
+        btn_fb_cat = KeyboardButton("📘𝗙𝗔𝗖𝗘𝗕𝗢𝗢𝗞 𝗧𝗔𝗦𝗞")
+        btn_back = KeyboardButton(ln["btn_back"])
+
+        _style(btn_ig_cat, 'primary')
+        _style(btn_fb_cat, 'success')
+        _style(btn_back, 'danger')
+
+        vertical_keyboard = [
+            [btn_ig_cat],
+            [btn_fb_cat],
+            [btn_back]
+        ]
+        await update.message.reply_text(
+            ln["select_cat"],
+            reply_markup=ReplyKeyboardMarkup(vertical_keyboard, resize_keyboard=True)
+        )
         return
 
     if text in ["📋 TASKS", "📋 কাজ (TASKS)"]:
@@ -931,7 +959,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         sub_tasks = []
         for t in active_tasks:
-            btn_t = KeyboardButton(f"{t['name']} (${t['price']})")
+            btn_t = KeyboardButton(f"{t['name']} (${t['price']:.4f})")
             _style(btn_t, 'success')
             sub_tasks.append([btn_t])
             
@@ -944,7 +972,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     all_tasks_for_match = db_data.get("dynamic_tasks", {})
     target_task = None
     for tid, t in all_tasks_for_match.items():
-        label = f"{t['name']} (${t['price']})"
+        label = f"{t['name']} (${t['price']:.4f})"
         if text == label:
             target_task = t
             break
@@ -964,7 +992,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         _style(btn_cnc, 'danger')
 
         kb = ReplyKeyboardMarkup([[btn_str], [btn_vid], [btn_cnc]], resize_keyboard=True)
-        rules_msg = f"🛡️ 🌟 *{target_task['name']}*\n\n💵 Payout: ${target_task['price']}\n\n📝 *Rules:*\n{target_task['rules']}\n\n🚀 Tap START to continue."
+        rules_msg = f"🛡️ 🌟 *{target_task['name']}*\n\n💵 Payout: ${target_task['price']:.4f}\n\n📝 *Rules:*\n{target_task['rules']}\n\n🚀 Tap START to continue."
         await update.message.reply_text(rules_msg, parse_mode="Markdown", reply_markup=kb)
         return
 
@@ -1010,7 +1038,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     )
                     
                 cred_msg = await update.message.reply_text(mono_msg, parse_mode="Markdown")
-                asyncio.create_task(delete_message_after_delay(context, update.effective_chat.id, cred_msg.message_id, 60))
+                state["cred_msg_id"] = cred_msg.message_id
                 
                 if state["task_type"] == "2fa":
                     state["step"] = "waiting_for_2fa"
@@ -1306,8 +1334,8 @@ async def task_timeout_watcher(context: ContextTypes.DEFAULT_TYPE, user_id: int,
     if current_state.get("session_id") != session_id:
         return  # ইউজার ইতিমধ্যে টাস্ক শেষ করেছে/বাতিল করেছে/অন্য কিছুতে চলে গেছে
     USER_STATE.pop(user_id, None)
-    btn_ret = InlineKeyboardButton("🔙 Return to main menu", callback_data="return_to_tasks")
-    kb = InlineKeyboardMarkup([[btn_ret]])
+    btn_ret = KeyboardButton("🔙 Return to main menu")
+    kb = ReplyKeyboardMarkup([[btn_ret]], resize_keyboard=True)
     try:
         await context.bot.send_message(chat_id=chat_id, text="⏰ Time's up! Task cancelled.", reply_markup=kb)
     except Exception:
@@ -1326,25 +1354,6 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ln = LANGUAGES[lang]
 
     await query.answer()
-
-    if data == "return_to_tasks":
-        btn_ig_cat = KeyboardButton("🔥𝗜𝗡𝗦𝗧𝗔𝗚𝗥𝗔𝗠 𝗧𝗔𝗦𝗞")
-        btn_fb_cat = KeyboardButton("📘𝗙𝗔𝗖𝗘𝗕𝗢𝗢𝗞 𝗧𝗔𝗦𝗞")
-        btn_back = KeyboardButton(ln["btn_back"])
-
-        _style(btn_ig_cat, 'primary')
-        _style(btn_fb_cat, 'success')
-        _style(btn_back, 'danger')
-
-        vertical_keyboard = [
-            [btn_ig_cat],
-            [btn_fb_cat],
-            [btn_back]
-        ]
-        await context.bot.send_message(chat_id=user_id, text=ln["select_cat"], reply_markup=ReplyKeyboardMarkup(vertical_keyboard, resize_keyboard=True))
-        try: await query.delete_message()
-        except: pass
-        return
 
     if data == "verify_join":
         if await is_user_joined_all(context.bot, user_id):
