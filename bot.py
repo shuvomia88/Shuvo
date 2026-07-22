@@ -9,7 +9,6 @@ import pyotp
 import logging
 import asyncio
 import requests
-from http.server import BaseHTTPRequestHandler, HTTPServer
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 
@@ -122,14 +121,14 @@ def add_to_id_dump(category: str, entry: dict):
 # ============================================================
 LANGUAGES = {
     "en": {
-        "welcome": "🎉 Welcome to {name} TaskPro Bot! 🤖\n\nComplete tasks, submit your proof, and earn rewards with ease.\n\n🚀 Happy Earning & Good Luck!",
-        "btn_balance": "💳 BALANCE",
-        "btn_tasks": "📋 TASKS",
-        "btn_withdraw": "📤 WITHDRAW",
-        "btn_report": "📊 YOUR REPORT",
-        "btn_support": "ℹ️ SUPPORT",
-        "btn_language": "🌐 LANGUAGE",
-        "btn_admin": "🛠️ ADMIN PANEL",
+        "welcome": "🎉 Welcome to 𓆩𓆩 𝗢𝗿𝗶𝘃𝗲𝘅 𓆪𓆪! 🤖\n\n📋 Complete tasks with ease.\n📤 Submit your proof.\n💰 Earn rewards instantly.\n\n⚡ Fast • Secure • Trusted\n\n🚀 Happy Earning & Best of Luck! 💙",
+        "btn_balance": "💳 𝖡𝖺𝗅𝖺𝗇𝖼𝖾",
+        "btn_tasks": "📋 𝖳𝖺𝗌𝗄",
+        "btn_withdraw": "📤 𝖶𝗂𝗍𝗁𝖽𝗋𝖺𝗐",
+        "btn_report": "📊 𝖸𝗈𝗎𝗋 𝖱𝖾𝗉𝗈𝗋𝗍",
+        "btn_support": "ℹ️ 𝖲𝗎𝗉𝗉𝗈𝗋𝗍",
+        "btn_language": "🌐 𝖫𝖺𝗇𝗀𝗎𝖺𝗀𝖾",
+        "btn_admin": "🛠️ 𝖠𝖽𝗆𝗂𝗇 𝖯𝖺𝗇𝖾𝗅",
         "btn_back": "🔙 BACK",
         "btn_cancel": "❌ cancel",
         "btn_start": "▶️ Start",
@@ -141,7 +140,7 @@ LANGUAGES = {
         "report_msg": "📊 All Account Report\n\n✅ Success: [{s}]\n⏳ Reviewing: [{r}]\n❌ Rejected: [{rej}]",
         "select_cat": "📋 Select Category:",
         "task_hidden": "❌ This task is currently hidden by Admin.",
-        "no_tasks": "❌ No tasks available in this category.",
+        "no_tasks": "🚧 This task is currently closed.\nPlease try others. ✅",
         "choose_type": "🎯 Choose Task:",
         "send_2fa_secret": "👉 Please Send Your 2FA Secret Key",
         "send_cookies": "👉 Please Send Your Cookies Data",
@@ -171,14 +170,14 @@ LANGUAGES = {
         "support_msg": "⚠️ কোনো সমস্যা হলে অ্যাডমিনকে জানান।"
     },
     "bn": {
-        "welcome": "🎉 Welcome to {name} TaskPro Bot! 🤖\n\nComplete tasks, submit your proof, and earn rewards with ease.\n\n🚀 Happy Earning & Good Luck!",
-        "btn_balance": "💳 ব্যালেন্স",
-        "btn_tasks": "📋 কাজ (TASKS)",
-        "btn_withdraw": "📤 টাকা তুলুন",
-        "btn_report": "📊 আপনার রিপোর্ট",
-        "btn_support": "ℹ️ সাপোর্ট (SUPPORT)",
-        "btn_language": "🌐 ভাষা (LANGUAGE)",
-        "btn_admin": "🛠️ এডমিন প্যানেল",
+        "welcome": "🎉 Welcome to 𓆩𓆩 𝗢𝗿𝗶𝘃𝗲𝘅 𓆪𓆪! 🤖\n\n📋 Complete tasks with ease.\n📤 Submit your proof.\n💰 Earn rewards instantly.\n\n⚡ Fast • Secure • Trusted\n\n🚀 Happy Earning & Best of Luck! 💙",
+        "btn_balance": "💳 𝖡𝖺𝗅𝖺𝗇𝖼𝖾",
+        "btn_tasks": "📋 𝖳𝖺𝗌𝗄",
+        "btn_withdraw": "📤 𝖶𝗂𝗍𝗁𝖽𝗋𝖺𝗐",
+        "btn_report": "📊 𝖸𝗈𝗎𝗋 𝖱𝖾𝗉𝗈𝗋𝗍",
+        "btn_support": "ℹ️ 𝖲𝗎𝗉𝗉𝗈𝗋𝗍",
+        "btn_language": "🌐 𝖫𝖺𝗇𝗀𝗎𝖺𝗀𝖾",
+        "btn_admin": "🛠️ 𝖠𝖽𝗆𝗂𝗇 𝖯𝖺𝗇𝖾𝗅",
         "btn_back": "🔙 পেছনে যান",
         "btn_cancel": "❌ বাতিল করুন",
         "btn_start": "▶️ শুরু করুন",
@@ -190,7 +189,7 @@ LANGUAGES = {
         "report_msg": "📊 সকল অ্যাকাউন্ট রিপোর্ট\n\n✅ সফল: [{s}]\n⏳ রিভিউতে আছে: [{r}]\n❌ বাতিল হয়েছে: [{rej}]",
         "select_cat": "📋 ক্যাটাগরি নির্বাচন করুন:",
         "task_hidden": "❌ এই কাজটি বর্তমানে এডমিন দ্বারা হাইড করা আছে।",
-        "no_tasks": "❌ এই ক্যাটাগরিতে বর্তমানে কোনো কাজ নেই।",
+        "no_tasks": "🚧 এই টাস্কে বর্তমানে কাজ বন্ধ আছে।\nঅন্যগুলো ট্রাই করেন। ✅",
         "choose_type": "🎯 কাজ বেছে নিন:",
         "send_2fa_secret": "👉 অনুগ্রহ করে আপনার 2FA সিক্রেট কি (Secret Key) পাঠান",
         "send_cookies": "👉 অনুগ্রহ করে আপনার কুকিজ (Cookies) ডাটা পাঠান",
@@ -359,7 +358,7 @@ def main_menu_keyboard(user_id: int, lang: str):
     btn_report = KeyboardButton(ln["btn_report"])
     btn_support = KeyboardButton(ln["btn_support"])
     btn_language = KeyboardButton(ln["btn_language"])
-    btn_refer = KeyboardButton("🔗 Refer" if lang == "en" else "🔗 রেফার করুন")
+    btn_refer = KeyboardButton("🔗 𝖱𝖾𝖿𝖾𝗋 & 𝖤𝖺𝗋𝗇")
     
     _style(btn_balance, 'success')
     _style(btn_tasks, 'primary')
@@ -493,13 +492,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         btn_ig = InlineKeyboardButton("🔷 Instagram", callback_data="adm_cat:instagram:")
         btn_fb = InlineKeyboardButton("🟩 Facebook", callback_data="adm_cat:facebook:")
+        btn_gm = InlineKeyboardButton("📧 Gmail", callback_data="adm_cat:gmail:")
+        btn_tt = InlineKeyboardButton("🎵 TikTok", callback_data="adm_cat:tiktok:")
         btn_cancel = InlineKeyboardButton("❌ Cancel", callback_data="cancel_add_task")
-        
+
         _style(btn_ig, 'primary')
         _style(btn_fb, 'success')
+        _style(btn_gm, 'primary')
+        _style(btn_tt, 'success')
         _style(btn_cancel, 'danger')
-        
-        kb = InlineKeyboardMarkup([[btn_ig, btn_fb], [btn_cancel]])
+
+        kb = InlineKeyboardMarkup([[btn_ig, btn_fb], [btn_gm, btn_tt], [btn_cancel]])
         await update.message.reply_text(f"📌 বাটন নাম: {button_name}\n\nকোন ক্যাটাগরিতে যুক্ত করবেন?", reply_markup=kb)
         return
 
@@ -877,25 +880,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # --- MENU NAVIGATION ---
-    if text in ["💳 BALANCE", "💳 ব্যালেন্স"]:
+    if text in ["💳 𝖡𝖺𝗅𝖺𝗇𝖼𝖾", "💳 BALANCE", "💳 ব্যালেন্স"]:
         await update.message.reply_text(ln["balance_msg"].format(bal=f"{user_profile['balance']:.5f}"), reply_markup=main_menu_keyboard(user_id, lang))
         return
 
-    if text in ["📊 YOUR REPORT", "📊 আপনার রিপোর্ট"]:
+    if text in ["📊 𝖸𝗈𝗎𝗋 𝖱𝖾𝗉𝗈𝗋𝗍", "📊 YOUR REPORT", "📊 আপনার রিপোর্ট"]:
         await update.message.reply_text(
             ln["report_msg"].format(s=user_profile.get('success_count', 0), r=user_profile.get('review_count', 0), rej=user_profile.get('rejected_count', 0)),
             reply_markup=main_menu_keyboard(user_id, lang)
         )
         return
 
-    if text in ["ℹ️ SUPPORT", "ℹ️ সাপোর্ট (SUPPORT)"]:
-        btn_adm = InlineKeyboardButton("👤 Admin", url="https://t.me/adim_shuvo")
+    if text in ["ℹ️ 𝖲𝗎𝗉𝗉𝗈𝗋𝗍", "ℹ️ SUPPORT", "ℹ️ সাপোর্ট (SUPPORT)"]:
+        btn_adm = InlineKeyboardButton("𓆩𓆩 𝗢𝗿𝗶𝘃𝗲𝘅 𝗔𝗱𝗺𝗶𝗻 𓆪𓆪", url="https://t.me/adim_shuvo")
         _style(btn_adm, 'primary')
         inline_kb = InlineKeyboardMarkup([[btn_adm]])
-        await update.message.reply_text(ln["support_msg"], reply_markup=inline_kb)
+        support_text = "🛠️ Admin Support\n\n⚠️ Need help?\n💬 Contact Admin for quick support."
+        await update.message.reply_text(support_text, reply_markup=inline_kb)
         return
 
-    if text in ["🌐 LANGUAGE", "🌐 ভাষা (LANGUAGE)"]:
+    if text in ["🌐 𝖫𝖺𝗇𝗀𝗎𝖺𝗀𝖾", "🌐 LANGUAGE", "🌐 ভাষা (LANGUAGE)"]:
         btn_bn = InlineKeyboardButton("🇧🇩 বাংলা", callback_data="lang_bn")
         btn_en = InlineKeyboardButton("🇬🇧 English", callback_data="lang_en")
         _style(btn_bn, 'success')
@@ -925,29 +929,46 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    if text in ["📋 TASKS", "📋 কাজ (TASKS)"]:
-        btn_ig_cat = KeyboardButton("🔥𝗜𝗡𝗦𝗧𝗔𝗚𝗥𝗔𝗠 𝗧𝗔𝗦𝗞")
-        btn_fb_cat = KeyboardButton("📘𝗙𝗔𝗖𝗘𝗕𝗢𝗢𝗞 𝗧𝗔𝗦𝗞")
+    if text in ["📋 𝖳𝖺𝗌𝗄", "📋 TASKS", "📋 কাজ (TASKS)"]:
+        btn_ig_cat = KeyboardButton("📲𝗜𝗡𝗦𝗧𝗔𝗚𝗥𝗔𝗠 𝗧𝗔𝗦𝗞")
+        btn_fb_cat = KeyboardButton("📲𝗙𝗔𝗖𝗘𝗕𝗢𝗢𝗞 𝗧𝗔𝗦𝗞")
+        btn_gm_cat = KeyboardButton("📧𝗚𝗠𝗔𝗜𝗟 𝗧𝗔𝗦𝗞")
+        btn_tt_cat = KeyboardButton("📲𝗧𝗜𝗞𝗧𝗢𝗞 𝗧𝗔𝗦𝗞")
         btn_back = KeyboardButton(ln["btn_back"])
-        
+
         _style(btn_ig_cat, 'primary')
         _style(btn_fb_cat, 'success')
+        _style(btn_gm_cat, 'primary')
+        _style(btn_tt_cat, 'success')
         _style(btn_back, 'danger')
-        
+
         vertical_keyboard = [
             [btn_ig_cat],
             [btn_fb_cat],
+            [btn_gm_cat],
+            [btn_tt_cat],
             [btn_back]
         ]
-        
+
         await update.message.reply_text(
             ln["select_cat"],
             reply_markup=ReplyKeyboardMarkup(vertical_keyboard, resize_keyboard=True)
         )
         return
 
-    if text in ["🔥𝗜𝗡𝗦𝗧𝗔𝗚𝗥𝗔𝗠 𝗧𝗔𝗦𝗞", "📘𝗙𝗔𝗖𝗘𝗕𝗢𝗢𝗞 𝗧𝗔𝗦𝗞", "🔥𝗜𝗡𝗦𝗧𝗔𝗚𝗥𝗔`𝗠 𝗧𝗔𝗦𝗞"]:
-        cat_key = "instagram" if "𝗜𝗡𝗦𝗧𝗔𝗚𝗥𝗔" in text else "facebook"
+    _CAT_BUTTON_MAP = {
+        "📲𝗜𝗡𝗦𝗧𝗔𝗚𝗥𝗔𝗠 𝗧𝗔𝗦𝗞": "instagram",
+        "📲𝗙𝗔𝗖𝗘𝗕𝗢𝗢𝗞 𝗧𝗔𝗦𝗞": "facebook",
+        "📧𝗚𝗠𝗔𝗜𝗟 𝗧𝗔𝗦𝗞": "gmail",
+        "📲𝗧𝗜𝗞𝗧𝗢𝗞 𝗧𝗔𝗦𝗞": "tiktok",
+        # পুরনো টেক্সট (backward compatibility)
+        "🔥𝗜𝗡𝗦𝗧𝗔𝗚𝗥𝗔𝗠 𝗧𝗔𝗦𝗞": "instagram",
+        "📘𝗙𝗔𝗖𝗘𝗕𝗢𝗢𝗞 𝗧𝗔𝗦𝗞": "facebook",
+        "🔥𝗜𝗡𝗦𝗧𝗔𝗚𝗥𝗔`𝗠 𝗧𝗔𝗦𝗞": "instagram",
+    }
+
+    if text in _CAT_BUTTON_MAP:
+        cat_key = _CAT_BUTTON_MAP[text]
         if not db_data["visibility"].get(f"{cat_key}_task", True) and user_id != ADMIN_ID:
             await update.message.reply_text(ln["task_hidden"])
             return
@@ -1061,7 +1082,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         await update.message.reply_text(ln["send_cookies"], reply_markup=ReplyKeyboardMarkup([[btn_cnc]], resize_keyboard=True))
             return
 
-    if text in ["🔗 Refer", "🔗 রেফার করুন"]:
+    if text in ["🔗 𝖱𝖾𝖿𝖾𝗋 & 𝖤𝖺𝗋𝗇", "🔗 Refer", "🔗 রেফার করুন"]:
         bot_username = context.bot.username
         ref_link = f"https://t.me/{bot_username}?start=ref_{user_id}"
         if lang == "bn":
@@ -1081,7 +1102,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(msg)
         return
 
-    if text in ["📤 WITHDRAW", "📤 টাকা তুলুন"]:
+    if text in ["📤 𝖶𝗂𝗍𝗁𝖽𝗋𝖺𝗐", "📤 WITHDRAW", "📤 টাকা তুলুন"]:
         bal = user_profile["balance"]
         btn_wth = InlineKeyboardButton("Withdraw", callback_data="start_withdraw")
         _style(btn_wth, 'success')
@@ -1090,7 +1111,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # --- ADMIN CONTROL DASHBOARD PANEL ---
-    if text in ["🛠️ ADMIN PANEL", "🛠️ ENDMIN PANEL", "🛠️ এডমিন প্যানেল"] and user_id == ADMIN_ID:
+    if text in ["🛠️ 𝖠𝖽𝗆𝗂𝗇 𝖯𝖺𝗇𝖾𝗅", "🛠️ ADMIN PANEL", "🛠️ ENDMIN PANEL", "🛠️ এডমিন প্যানেল"] and user_id == ADMIN_ID:
         btn_add_t = KeyboardButton("➕ Add Task")
         btn_del_t = KeyboardButton("❌ Delete Task")
         btn_vis_t = KeyboardButton("👁️ Task Hide/Show")
@@ -1212,10 +1233,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id == ADMIN_ID and text == "❌ Delete Task":
         btn_del_ig = InlineKeyboardButton("Instagram Tasks", callback_data="adm_del_cat:instagram")
         btn_del_fb = InlineKeyboardButton("Facebook Tasks", callback_data="adm_del_cat:facebook")
+        btn_del_gm = InlineKeyboardButton("Gmail Tasks", callback_data="adm_del_cat:gmail")
+        btn_del_tt = InlineKeyboardButton("TikTok Tasks", callback_data="adm_del_cat:tiktok")
         _style(btn_del_ig, 'danger')
         _style(btn_del_fb, 'danger')
-        
-        kb = InlineKeyboardMarkup([[btn_del_ig, btn_del_fb]])
+        _style(btn_del_gm, 'danger')
+        _style(btn_del_tt, 'danger')
+
+        kb = InlineKeyboardMarkup([[btn_del_ig, btn_del_fb], [btn_del_gm, btn_del_tt]])
         await update.message.reply_text("🗑️ কোন ক্যাটাগরির কাজ ডিলিট করতে চান?", reply_markup=kb)
         return
 
@@ -1243,10 +1268,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         v = db_data["visibility"]
         btn_h_ig = InlineKeyboardButton(f"IG Cat [{'ON' if v.get('instagram_task',True) else 'OFF'}]", callback_data="h_ig_m")
         btn_h_fb = InlineKeyboardButton(f"FB Cat [{'ON' if v.get('facebook_task',True) else 'OFF'}]", callback_data="h_fb_m")
+        btn_h_gm = InlineKeyboardButton(f"GM Cat [{'ON' if v.get('gmail_task',True) else 'OFF'}]", callback_data="h_gm_m")
+        btn_h_tt = InlineKeyboardButton(f"TT Cat [{'ON' if v.get('tiktok_task',True) else 'OFF'}]", callback_data="h_tt_m")
         _style(btn_h_ig, 'primary')
         _style(btn_h_fb, 'primary')
-        
-        kb = InlineKeyboardMarkup([[btn_h_ig, btn_h_fb]])
+        _style(btn_h_gm, 'primary')
+        _style(btn_h_tt, 'primary')
+
+        kb = InlineKeyboardMarkup([[btn_h_ig, btn_h_fb], [btn_h_gm, btn_h_tt]])
         await update.message.reply_text("👁️ Click to Toggle Category Visibility:", reply_markup=kb)
         return
 
@@ -1571,20 +1600,27 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data.startswith("h_"):
-        key_map = {"h_ig_m": "instagram_task", "h_fb_m": "facebook_task"}
+        key_map = {
+            "h_ig_m": "instagram_task", "h_fb_m": "facebook_task",
+            "h_gm_m": "gmail_task", "h_tt_m": "tiktok_task",
+        }
         target_key = key_map[data]
         with _lock:
             d = _load()
             d["visibility"][target_key] = not d["visibility"].get(target_key, True)
             _save(d)
         v = d["visibility"]
-        
-        btn_m_ig = InlineKeyboardButton(f"IG Master [{'ON' if v.get('instagram_task',True) else 'OFF'}]", callback_data="h_ig_m")
-        btn_m_fb = InlineKeyboardButton(f"FB Master [{'ON' if v.get('facebook_task',True) else 'OFF'}]", callback_data="h_fb_m")
+
+        btn_m_ig = InlineKeyboardButton(f"IG Cat [{'ON' if v.get('instagram_task',True) else 'OFF'}]", callback_data="h_ig_m")
+        btn_m_fb = InlineKeyboardButton(f"FB Cat [{'ON' if v.get('facebook_task',True) else 'OFF'}]", callback_data="h_fb_m")
+        btn_m_gm = InlineKeyboardButton(f"GM Cat [{'ON' if v.get('gmail_task',True) else 'OFF'}]", callback_data="h_gm_m")
+        btn_m_tt = InlineKeyboardButton(f"TT Cat [{'ON' if v.get('tiktok_task',True) else 'OFF'}]", callback_data="h_tt_m")
         _style(btn_m_ig, 'primary')
         _style(btn_m_fb, 'primary')
-        
-        kb = InlineKeyboardMarkup([[btn_m_ig, btn_m_fb]])
+        _style(btn_m_gm, 'primary')
+        _style(btn_m_tt, 'primary')
+
+        kb = InlineKeyboardMarkup([[btn_m_ig, btn_m_fb], [btn_m_gm, btn_m_tt]])
         await query.edit_message_text("👁️ Category Visibility toggled:", reply_markup=kb)
         return
 
@@ -1733,28 +1769,35 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
         pass
 
 # ============================================================
-# DUMMY HEALTH-CHECK SERVER (Render "Web Service" পোর্ট চায়)
+# FLASK KEEP-ALIVE SERVER (Render "Web Service" পোর্ট চায় + Uptime
+# monitor যেমন UptimeRobot দিয়ে পিং করলে বট কখনো ঘুমাবে না/বন্ধ হবে না)
 # ============================================================
+from flask import Flask
+_flask_app = Flask(__name__)
+_START_TIME = datetime.datetime.utcnow()
+
+@_flask_app.route("/")
+def _home():
+    uptime = datetime.datetime.utcnow() - _START_TIME
+    return f"✅ Bot is running | Uptime: {str(uptime).split('.')[0]}"
+
+@_flask_app.route("/health")
+def _health():
+    return {"status": "ok", "uptime_seconds": int((datetime.datetime.utcnow() - _START_TIME).total_seconds())}
+
 def _run_dummy_server():
     """
     Render "Web Service" একটা খোলা পোর্ট আশা করে, নাহলে সার্ভিসটাকে
-    unhealthy ভেবে বারবার restart করে। বট নিজে কোনো HTTP পোর্ট ব্যবহার
-    করে না বলে, শুধু Render-কে সন্তুষ্ট রাখতে একটা ছোট্ট ডামি সার্ভার
+    unhealthy ভেবে বারবার restart করে। Flask দিয়ে একটা হালকা সার্ভার
     আলাদা থ্রেডে চালানো হচ্ছে — এটা বটের আসল কাজে কোনো প্রভাব ফেলে না।
-    এটা প্রোগ্রাম চলাকালীন একবারই চালু হয় (bot restart হলেও দ্বিতীয়বার না)।
+    এই "/" URL-টা UptimeRobot বা যেকোনো uptime monitor দিয়ে প্রতি
+    কয়েক মিনিটে পিং করলে Render সার্ভিসকে "sleep"/বন্ধ হতে দেবে না।
     """
     port = int(os.environ.get("PORT", 10000))
-    class _Health(BaseHTTPRequestHandler):
-        def do_GET(self):
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(b"Bot is running")
-        def log_message(self, *args):
-            pass  # এই সার্ভারের রিকোয়েস্ট আলাদা করে log করার দরকার নেই
     try:
-        HTTPServer(("0.0.0.0", port), _Health).serve_forever()
+        _flask_app.run(host="0.0.0.0", port=port)
     except Exception as e:
-        logger.error(f"Health-check সার্ভার চালু করা যায়নি: {e}")
+        logger.error(f"Flask keep-alive সার্ভার চালু করা যায়নি: {e}")
 
 # ============================================================
 # MAIN EXECUTION
