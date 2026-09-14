@@ -1,0 +1,2072 @@
+import os
+import json
+import re
+import threading
+import datetime
+import uuid
+import random
+import pyotp
+import logging
+import asyncio
+import requests
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment
+
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton as _TelegramKeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton as _TelegramInlineKeyboardButton, Bot as _TelegramBot, MessageEntity as _TelegramMessageEntity
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
+from telegram.error import TelegramError, Conflict
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+)
+logger = logging.getLogger(__name__)
+
+# httpx প্রতিটা Telegram API কল-এ একটা INFO লাইন প্রিন্ট করে (getUpdates,
+# getMe ইত্যাদি) — এতে console অকারণে ভরে যায়, তাই এটার লেভেল WARNING-এ
+# তুলে দেওয়া হলো যাতে শুধু আসল সমস্যা হলেই কিছু দেখায়।
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("apscheduler").setLevel(logging.WARNING)
+
+
+# ============================================================
+# TELEGRAM PREMIUM CUSTOM EMOJI DATABASE
+# ============================================================
+PREMIUM_EMOJI_IDS = {
+    "📘": "5334807341109908955", "💬": "5334759662677957452",
+    "✈️": "5337010556253543833", "💼": "5336814486701514414",
+    "💭": "5337155807752524558", "📸": "5334868205091459431",
+    "🍎": "5334637951894722661", "🔍": "5335010201005231986",
+    "🪟": "5334880948259427772", "🧑‍🤝‍🧑": "5334590977837403844",
+    "🎵": "5339213256001102461", "🏦": "5348469219761626211",
+    "🚀": "5346042941196507141", "📈": "5348372939479751825",
+    "💱": "5348212415077064131", "🌟": "5337102391244263212",
+    "👻": "5359441366554255082", "🚗": "5298715455316303708",
+    "💵": "5776103539872896061", "🎬": "5116246243646898866",
+    "💜": "5463060437572528782", "🔒": "5399818044866327279",
+    "🐦": "5215726959056662534", "👽": "4992421103847604984",
+    "📌": "5346103513120258857", "🎮": "5233333563306301418",
+    "📹": "5881799193219043268", "💻": "4994972469040251302",
+    "☎️": "4992613535562334989", "🎥": "6255738712664050133",
+    "🍿": "6104822598493801746", "📦": "5336879280578138635",
+    "🐼": "5336879280578138635", "🛵": "5336879280578138635",
+    "🛒": "5336879280578138635", "🛍️": "5336879280578138635",
+    "💳": "5336879280578138635", "🦉": "5336879280578138635",
+    "🤖": "5296516998996445955", "📓": "5336879280578138635",
+    "🐙": "5417836094098007862", "🖌️": "5111661409008092227",
+    "🎨": "5336879280578138635", "🌐": "5336879280578138635",
+    "☁️": "5336879280578138635", "📚": "5336879280578138635",
+    "🗣️": "5336879280578138635",
+}
+
+GLOBAL_BODY_EMOJIS = {
+    "➖": "5870818207383686839", "🚫": "5334807341109908955", "😒": "5334763399299506604",
+    "🖥": "6235307467337635626", "🌐": "5334590977837403844", "🌟": "5337102391244263212",
+    "🕓": "5336983442125001376", "⌛": "4958503072801228000", "💬": "5337302974806922068",
+    "🔐": "5337255927735163754", "🍏": "5337132498965010628", "❔": "5336850036145823599",
+    "⚠️": "5336944168944047463", "🔥": "5337267511261960341", "💸": "5348469219761626211",
+    "🥚": "5348390922507817684", "👨‍⚖": "5334763399299506604", "🐁": "5348494358205207761",
+    "🧻": "5348486915026884464", "⚗": "5346311574221000149", "🛴": "5348075478634766440",
+    "📊": "5353032893096567467", "🔢": "5352862640592949843", "👤": "5352861489541714456",
+    "📁": "5352721946054268944", "🚀": "5352597830089347330", "💎": "5352838545826420397",
+    "📍": "5352922460897452503", "👋": "5353027129250453493", "✅": "5352694861990501856",
+    "1️⃣": "5352651766288652742", "2️⃣": "5355186458418257716", "3️⃣": "5352867219028091093",
+    "4️⃣": "5352566657216714037", "5️⃣": "5353086880835474989", "6️⃣": "5354859211975071385",
+    "7️⃣": "5352859127309707652", "8️⃣": "5352957533600389988", "9️⃣": "5353060913463204207",
+    "🔤": "5352727417842606016", "📣": "5352980533150259581", "📤": "5353001161878182134",
+    "✨": "5352552689983067014", "🔹": "5352638632278660622", "🎙": "5355102594886833928",
+    "💴": "5352985330628730418", "📅": "5352585194295564660", "📴": "5352974971167611327",
+    "✏️": "5395444784611480792", "📱": "5337132498965010628", "🔗": "5420517437885943844",
+    "❌": "5420130255174145507", "⚙️": "5420155432272438703", "🫂": "5420145051336485498",
+    "➕": "5420323438508155202", "🗑": "5422557736330106570", "🎁": "5420396762189831222",
+    "➤": "5420618897898381296", "🏢": "5420156334215565595", "💳": "5190899075968441286",
+    "📝": "5192739271886282680", "🛡": "5190447043545438788", "🤝": "5192805934073685937",
+    "💰": "5190576863226933563", "👀": "5190645917711114179", "🕹": "5193100774988617665",
+    "🟢": "5192812028632274956", "🧪": "5190781475468915802", "🎨": "5190751148704833975",
+    "📂": "5257969839313526622", "🌍": "5780471598922337683", "📌": "5318986077455795572",
+    "📢": "5789428375261023681", "🆔": "5352862640592949843", "📈": "5352877703043258544",
+    "🔔": "5352980533150259581", "🏦": "5348469219761626211", "🧾": "5192739271886282680",
+    "👨‍⚖️": "5334763399299506604", "🤔": "5370919202796348364", "😮": "5391090636961099009",
+    # Common UI/message emojis used elsewhere in this bot.
+    # Exact Premium emoji IDs supplied for the Facebook task UI.
+    "🔜": "6089104521428997572", "😎": "5235807206770750407",
+    "➡️": "6238013326798887112", "⬇️": "5193202823411546657",
+    "🚧": "5336944168944047463", "❌": "5949785428843302949",
+    "📂": "6206185428702206246", "⭐️": "5127861690641156032",
+    "🛡": "6174589325695521740", "💵": "6206155797722830770",
+    "📝": "5215672443036772796", "🚀": "6068700050928704109",
+    "📱": "5848177124074066676", "⬆️": "5470143839371021696",
+    "🕐": "5215484787325676090", "👉": "6158862632926319619",
+    "📊": "5353032893096567467", "📥": "6203886371363364022",
+    "⌛": "5386367538735104399", "👨‍💼": "5334763399299506604",
+    "😀": "5978822208082939495", "💰": "6190336264940559752",
+    "📤": "5353001161878182134", "✅": "4956454790012863177",
+    "🎉": "5352552689983067014", "⚡": "6082511510406436819", "⚡️": "6082511510406436819", "💙": "5463060437572528782",
+    "ℹ️": "5352861489541714456", "🔙": "5420618897898381296", "▶️": "5352694861990501856",
+    "🎥": "6255738712664050133", "❓": "5336850036145823599", "👉": "5352922460897452503",
+    "🛡️": "5190447043545438788", "⏱️": "5336983442125001376", "🔄": "5352980533150259581",
+    "👇": "5352922460897452503", "💼": "5336814486701514414", "📋": "5352721946054268944",
+    "📤": "5353001161878182134", "💰": "5190576863226933563", "❗": "5336944168944047463",
+    "🔑": "5337255927735163754", "🛠️": "5420155432272438703", "🚧": "5336944168944047463",
+    "❤️": "5463060437572528782", "📢": "5789428375261023681", "👨‍💼": "5334763399299506604",
+    "🍪": "5336879280578138635", "🎯": "5352922460897452503", "👁️": "5190645917711114179",
+    "💥": "5352597830089347330", "📄": "5352721946054268944", "📥": "5353001161878182134",
+    "📲": "5337132498965010628", "📷": "5334868205091459431", "🗂️": "5257969839313526622",
+    "🗑️": "5422557736330106570", "🟡": "5192812028632274956", "🥹": "5370919202796348364",
+}
+
+# Exact IDs supplied for the requested Facebook-task message design.
+# These are applied after the general emoji database so they take precedence.
+GLOBAL_BODY_EMOJIS.update({
+    "🔜": "6089104521428997572",
+    "😎": "5235807206770750407",
+    "✅": "4956454790012863177",
+    "📤": "5353001161878182134",
+    "💰": "6190336264940559752",
+    "⚡️": "6082511510406436819",
+    "⚡": "6082511510406436819",
+    "😀": "5978822208082939495",
+    "🔥": "6068682402908083940",
+    "➡️": "6238013326798887112",
+    "⬇️": "5193202823411546657",
+    "🚧": "5336944168944047463",
+    "❌": "5949785428843302949",
+    "📂": "6206185428702206246",
+    "⭐️": "5127861690641156032",
+    "🛡": "6174589325695521740",
+    "🛡️": "6174589325695521740",
+    "💵": "6206155797722830770",
+    "📝": "5215672443036772796",
+    "🚀": "6068700050928704109",
+    "📱": "5848177124074066676",
+    "⬆️": "5470143839371021696",
+    "🕐": "5215484787325676090",
+    "👉": "6158862632926319619",
+    "📊": "5353032893096567467",
+    "📥": "6203886371363364022",
+    "⌛": "5386367538735104399",
+    "👨‍💼": "5334763399299506604",
+})
+
+PREMIUM_SERVICE_IDS = {
+    "FACEBOOK": "5334807341109908955",
+    "WHATSAPP": "5334759662677957452",
+    "TELEGRAM": "5337010556253543833",
+    "WHATSAPP BUSINESSES": "5336814486701514414",
+    "IMO": "5337155807752524558",
+    "INSTAGRAM": "5334868205091459431",
+    "APPLE": "5334637951894722661",
+    "GOOGLE": "5335010201005231986",
+    "MICROSOFT": "5334880948259427772",
+    "TEAMS": "5334590977837403844",
+    "TIKTOK": "5339213256001102461",
+    "BKASH": "5348469219761626211",
+    "ROCKET": "5346042941196507141",
+    "BYBIT": "5348372939479751825",
+    "BINANCE": "5348212415077064131",
+    "MELBET": "5337102391244263212",
+    "SNAPCHAT": "5359441366554255082",
+    "UBER": "5298715455316303708",
+    "PAYPAL": "5776103539872896061",
+    "DISCORD": "5116246243646898866",
+    "AMAZON": "4995019580536524226",
+    "VIBER": "5463060437572528782",
+    "LINKEDIN": "6224222994265279792",
+    "LINE": "5399818044866327279",
+    "WECHAT": "5782757599560602950",
+    "TWITTER": "5215726959056662534",
+    "REDDIT": "4992421103847604984",
+    "PINTEREST": "5346103513120258857",
+    "TWITCH": "5233333563306301418",
+    "ZOOM": "5881799193219043268",
+    "SIGNAL": "5293998404404272267",
+    "SLACK": "4994972469040251302",
+    "SKYPE": "4992613535562334989",
+    "NETFLIX": "6255738712664050133",
+    "SPOTIFY": "5411392711146095115",
+    "AMAZON PRIME": "6111801057061374810",
+    "HOICHOI": "6104822598493801746",
+    "DARAZ": "5336879280578138635",
+    "FOODPANDA": "5336879280578138635",
+    "PATHAO": "5336879280578138635",
+    "ALIEXPRESS": "5336879280578138635",
+    "SHOPEE": "5336879280578138635",
+    "PAYONEER": "5336879280578138635",
+    "WISE": "5336879280578138635",
+    "CHATGPT": "5296516998996445955",
+    "NOTION": "5336879280578138635",
+    "GITHUB": "5417836094098007862",
+    "CANVA": "5111661409008092227",
+    "FIGMA": "5336879280578138635",
+    "UPWORK": "5336879280578138635",
+    "FIVERR": "5336879280578138635",
+    "YAHOO": "5336879280578138635",
+    "DROPBOX": "5336879280578138635",
+    "COURSERA": "5336879280578138635",
+    "DUOLINGO": "5336879280578138635",
+}
+
+def premium_html(emoji: str) -> str:
+    """Return a Telegram HTML custom-emoji span for a known emoji."""
+    emoji_id = PREMIUM_EMOJI_IDS.get(emoji)
+    if emoji_id:
+        return f'<tg-emoji emoji-id="{emoji_id}">{emoji}</tg-emoji>'
+    return emoji
+
+def premiumize_entities(text, existing_entities=None):
+    """Attach Premium custom-emoji entities to every mapped emoji in outgoing messages."""
+    if not isinstance(text, str):
+        return existing_entities
+    entities = list(existing_entities or [])
+    occupied = []
+    # Longest first prevents overlaps such as 👨‍⚖ and 👨‍⚖️.
+    emoji_map = dict(PREMIUM_EMOJI_IDS)
+    emoji_map.update(GLOBAL_BODY_EMOJIS)
+    for emoji, emoji_id in sorted(emoji_map.items(), key=lambda item: len(item[0]), reverse=True):
+        start = 0
+        while True:
+            pos = text.find(emoji, start)
+            if pos < 0:
+                break
+            end = pos + len(emoji)
+            if not any(pos < e and end > s for s, e in occupied):
+                offset16 = len(text[:pos].encode("utf-16-le")) // 2
+                length16 = len(emoji.encode("utf-16-le")) // 2
+                entities.append(_TelegramMessageEntity(
+                    type="custom_emoji",
+                    offset=offset16,
+                    length=length16,
+                    custom_emoji_id=emoji_id,
+                ))
+                occupied.append((pos, end))
+            start = end
+    return entities or None
+
+
+def _premiumize_button_text(text):
+    """Remove normal emoji from button labels; the button icon is supplied via icon_custom_emoji_id."""
+    if not isinstance(text, str):
+        return text
+    result = text
+    all_emojis = sorted(set(PREMIUM_EMOJI_IDS) | set(GLOBAL_BODY_EMOJIS), key=len, reverse=True)
+    for emoji in all_emojis:
+        result = result.replace(emoji, "")
+    return result.strip().upper()
+
+
+# Patch Telegram text-sending methods once so every outgoing message automatically
+# receives the Premium custom-emoji entities, including language strings and dynamic messages.
+_original_bot_send_message = _TelegramBot.send_message
+_original_bot_edit_message_text = _TelegramBot.edit_message_text
+
+async def _premium_send_message(self, *args, **kwargs):
+    if len(args) >= 2:
+        text = args[1]
+        if isinstance(text, str):
+            kwargs["entities"] = premiumize_entities(text, kwargs.get("entities"))
+    elif isinstance(kwargs.get("text"), str):
+        kwargs["entities"] = premiumize_entities(kwargs["text"], kwargs.get("entities"))
+    return await _original_bot_send_message(self, *args, **kwargs)
+
+async def _premium_edit_message_text(self, *args, **kwargs):
+    if args and isinstance(args[0], str):
+        text = args[0]
+        kwargs["entities"] = premiumize_entities(text, kwargs.get("entities"))
+    elif isinstance(kwargs.get("text"), str):
+        kwargs["entities"] = premiumize_entities(kwargs["text"], kwargs.get("entities"))
+    return await _original_bot_edit_message_text(self, *args, **kwargs)
+
+_TelegramBot.send_message = _premium_send_message
+_TelegramBot.edit_message_text = _premium_edit_message_text
+
+PREMIUM_BUTTON_IDS = {
+    "TASK": "5267045723685264285",
+    "WITHDRAW": "6190336264940559752",
+    "YOUR REPORT": "5429184896637607413",
+    "REPORT": "5429184896637607413",
+    "SUPPORT": "6129805886383723340",
+    "বাংলা": "5291824687096027834",
+    "🇧🇩 বাংলা": "5291824687096027834",
+    "ENGLISH": "5293993521026453119",
+    "🇬🇧 ENGLISH": "5293993521026453119",
+}
+
+def _button_key(text):
+    if not isinstance(text, str):
+        return ""
+    value = _premiumize_button_text(text).strip()
+    return value.upper()
+
+def _premium_button_emoji(text: str):
+    key = _button_key(text)
+    if key in PREMIUM_BUTTON_IDS:
+        return PREMIUM_BUTTON_IDS[key]
+    upper = str(text).upper()
+    for name, emoji_id in PREMIUM_SERVICE_IDS.items():
+        if name in upper:
+            return emoji_id
+    for emoji, emoji_id in PREMIUM_EMOJI_IDS.items():
+        if emoji in str(text):
+            return emoji_id
+    return None
+
+def InlineKeyboardButton(text, *args, **kwargs):
+    """Create an inline button with a Premium custom-emoji icon and no duplicate normal emoji."""
+    if "icon_custom_emoji_id" not in kwargs:
+        emoji_id = _premium_button_emoji(text)
+        if emoji_id:
+            kwargs["icon_custom_emoji_id"] = emoji_id
+    text = _premiumize_button_text(text)
+    return _TelegramInlineKeyboardButton(text, *args, **kwargs)
+
+def KeyboardButton(text, *args, **kwargs):
+    """Create a reply-keyboard button with a Premium custom-emoji icon and no duplicate normal emoji."""
+    if "icon_custom_emoji_id" not in kwargs:
+        emoji_id = _premium_button_emoji(text)
+        if emoji_id:
+            kwargs["icon_custom_emoji_id"] = emoji_id
+    text = _premiumize_button_text(text)
+    return _TelegramKeyboardButton(text, *args, **kwargs)
+
+# ============================================================
+# CONFIG & FILE SETTINGS
+# ============================================================
+
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_ID = int(os.getenv("ADMIN_ID", "6470499890"))
+
+# বাধ্যতামূলক চ্যানেলগুলোর ইউজারনেম (বটকে অবশ্যই এই চ্যানেলে এডমিন হতে হবে)
+REQUIRED_CHANNELS = ["@range_channele", "@insagramth"]
+
+_lock = threading.Lock()
+
+def _style(btn, style_name: str):
+    """
+    কিছু বাটনে (রঙিন UI hint-এর জন্য) 'style' নামে একটা কাস্টম attribute
+    বসানোর চেষ্টা করা হয়। নতুন python-telegram-bot ভার্সনে Keyboard/
+    InlineKeyboardButton ক্লাস __slots__ ব্যবহার করে বলে সরাসরি নতুন
+    attribute বসানো সবসময় সম্ভব হয় না — এই ফাংশন চেষ্টা করে, ব্যর্থ হলে
+    নিঃশব্দে স্কিপ করে (বাটন ঠিকই কাজ করবে, শুধু রঙের hint-টা যোগ হবে না)।
+    """
+    try:
+        object.__setattr__(btn, 'style', style_name)
+    except Exception:
+        pass
+
+# ============================================================
+# FIREBASE REALTIME DATABASE (সব ডেটা এখানেই স্থায়ীভাবে সেভ হবে)
+# Render-এ ডিস্ক ephemeral, তাই local JSON file এর বদলে Firebase
+# ব্যবহার করা হচ্ছে যাতে redeploy/restart এ ডেটা হারিয়ে না যায়।
+# ============================================================
+FIREBASE_BASE_URL = "https://realtime-database-7310e-default-rtdb.firebaseio.com"
+_DATA_CACHE = None  # in-memory cache, _lock দ্বারা সুরক্ষিত
+
+def _firebase_get(path=""):
+    """Firebase থেকে ডেটা রিড করার ফাংশন"""
+    try:
+        r = requests.get(f"{FIREBASE_BASE_URL}/{path}.json", timeout=10)
+        if r.status_code == 200:
+            return r.json()
+        logger.error(f"Firebase GET failed on '{path}': HTTP {r.status_code}")
+    except Exception as e:
+        logger.error(f"Firebase GET Error on '{path}': {e}")
+    return None
+
+def _firebase_patch(data: dict, path=""):
+    """Firebase-এ শুধু নির্দিষ্ট top-level key গুলো আপডেট করে (অন্য কোনো ডেটা মোছে না)"""
+    try:
+        r = requests.patch(f"{FIREBASE_BASE_URL}/{path}.json", json=data, timeout=10)
+        if r.status_code == 200:
+            return True
+        logger.error(f"Firebase PATCH failed on '{path}': HTTP {r.status_code}")
+    except Exception as e:
+        logger.error(f"Firebase PATCH Error on '{path}': {e}")
+    return False
+
+def _firebase_put(data, path=""):
+    """Firebase-এ একটা নির্দিষ্ট path সম্পূর্ণভাবে overwrite করে (delete সহ ঠিকভাবে reflect হয়)"""
+    try:
+        r = requests.put(f"{FIREBASE_BASE_URL}/{path}.json", json=data, timeout=10)
+        if r.status_code == 200:
+            return True
+        logger.error(f"Firebase PUT failed on '{path}': HTTP {r.status_code}")
+    except Exception as e:
+        logger.error(f"Firebase PUT Error on '{path}': {e}")
+    return False
+
+# ============================================================
+# ID DUMP (Facebook/Instagram সাবমিশন এখানে জমা হবে, Admin Panel
+# থেকে txt ফাইল হিসেবে ডাউনলোড করলে খালি হয়ে যাবে)
+# ============================================================
+def add_to_id_dump(category: str, entry: dict):
+    """
+    একটা সাবমিশনের তথ্য (task, username, password, twofa) Facebook/Instagram
+    ডাম্প লিস্টে structured আকারে যোগ করে (Firebase-এ persist থাকে), যাতে
+    পরে টাস্ক অনুযায়ী গ্রুপ করে সাজানো যায়। কোনো কারণে ব্যর্থ হলে চুপচাপ
+    log করে, বট থামে না।
+    """
+    key = "fb_dump" if category == "facebook" else "ig_dump"
+    try:
+        with _lock:
+            d = _load()
+            if key not in d:
+                d[key] = []
+            d[key].append(entry)
+            _save(d)
+    except Exception as e:
+        logger.error(f"ID ডাম্পে যোগ করা যায়নি ({category}): {e}")
+
+# ============================================================
+# MULTI-LANGUAGE DICTIONARY
+# ============================================================
+LANGUAGES = {
+    "en": {
+        "welcome": "🔜 Welcome to 𓆩𓆩 FACEBOOK TASK 𓆪𓆪! 😎\n\n✅ Complete tasks with ease.\n📤 Submit your proof.\n💰 Earn rewards instantly.\n\n⚡️ Fast • Secure • Trusted\n\n😀 Happy Earning & Best of Luck! 🔥",
+                        "btn_tasks": "TASK",
+                "btn_withdraw": "WITHDRAW",
+                "btn_report": "YOUR REPORT",
+                "btn_support": "SUPPORT",
+                "btn_language": "LANGUAGE",
+                "btn_admin": "ADMIN PANEL",
+                "btn_back": "BACK",
+                "btn_cancel": "CANCEL",
+                "btn_start": "START",
+                "btn_video": "VIDEO",
+                "btn_how_to_2fa": "HOW TO GET 2FA?",
+        "select_lang": "🌐 Select Language / ভাষা নির্বাচন করুন:",
+        "lang_changed": "✅ Language changed to English!",
+        "balance_msg": "💳 Wallet Balance: ${bal}",
+        "report_msg": "📊 All Account Report📥\n\n✅ Success: [{s}]\n⌛ Reviewing: [{r}]\n❌ Rejected: [{rej}]",
+        "select_cat": "➡️ Select Your Task Category ⬇️",
+        "task_hidden": "❌ This task is currently hidden by Admin.",
+        "no_tasks": "🚧 This task is currently closed.\nPlease try others. ✅",
+        "choose_type": "🎯 Choose Task:",
+        "send_2fa_secret": "👉 Please Send Your 2FA Secret Key",
+        "send_cookies": "👉 Please Send Your Cookies Data 📂",
+        "send_fb_uid": "👉 Please Send Your Facebook UID",
+        "invalid_2fa": "❌ Invalid 2FA Secret Key! Please send a valid key again:",
+        "withdraw_dash": "💳 Your Balance Dashboard\n\n💰 Balance: ${bal}\n💸 Minimum Withdraw: $0.20\n💳 Withdrawal Charge: $0.03\n✅ You Will Receive: ${rec}",
+        "withdraw_min_err": "❌ Unsuccessful balance: Minimum $0.20 required",
+        "select_meth": "💳 Select Your Withdraw Method:",
+        "send_num": "📱 Please Send Your {method} Number",
+        "enter_amt": "💰 Please Enter Your Withdraw Amount:",
+        "insufficient": "❌ Insufficient balance.",
+        "min_amt_err": "❌ Minimum withdraw is $0.20",
+        "check_info": "📋 Please Check Your Info\n\n📱 Number: {num}\n💳 Method: {method}\n💵 Amount: ${amt}\n✅ Receive: ${rec}\n\n✅ If All Information Is Correct, Please Tap the Confirm Button. 👇",
+                "btn_confirm": "CONFIRM",
+        "pay_pending": "⌛ Your Payment Is Pending.\n\n👨‍💼 Please Wait for Admin Approval.",
+        "cookies_rec": "👉 Cookies Received. Click below to proceed.",
+                "btn_acc_reg": "ACCOUNT REGISTERED",
+        "invite_check": "⚠️ Have You Invited 2 Friends?\n\n❌ If You Have Not Invited 2 Friends, Your Report Will Be Rejected.",
+        "invite_check_short": "✅ Please confirm below to submit your report.",
+                "btn_subbed": "YES | I AM SUBSCRIBED",
+        "thanks_msg": "✅ Thanks! Please Do Not Unfollow. Follow the Rules.",
+        "report_received": "✅ Your report has been received!\n⌛ Please wait for report",
+        "no_usernames_err": "❌ No user available yet!",
+        "force_join_msg": "📢 আমাদের বটটি ব্যবহার করতে নিচের চ্যানেলগুলোতে জয়েন করুন:",
+        "not_joined_all": "❌ আপনি এখনো সবগুলো চ্যানেলে জয়েন করেননি! দয়া করে জয়েন করে আবার ভেরিফাই করুন।",
+        "verify_success": "✅ এখন আমাদের বটটি ব্যবহার করতে পারবেন।\nআমাদের চ্যানেলে জয়েন হওয়ার জন্য ধন্যবাদ! ❤️",
+        "support_msg": "⚠️ কোনো সমস্যা হলে অ্যাডমিনকে জানান।"
+    },
+    "bn": {
+        "welcome": "🔜 Welcome to 𓆩𓆩 FACEBOOK TASK 𓆪𓆪! 😎\n\n✅ Complete tasks with ease.\n📤 Submit your proof.\n💰 Earn rewards instantly.\n\n⚡️ Fast • Secure • Trusted\n\n😀 Happy Earning & Best of Luck! 🔥",
+                        "btn_tasks": "TASK",
+                "btn_withdraw": "WITHDRAW",
+                "btn_report": "YOUR REPORT",
+                "btn_support": "SUPPORT",
+                "btn_language": "LANGUAGE",
+                "btn_admin": "ADMIN PANEL",
+        "btn_back": "🔙 পেছনে যান",
+        "btn_cancel": "❌ বাতিল করুন",
+        "btn_start": "▶️ শুরু করুন",
+        "btn_video": "🎥 ভিডিও দেখুন",
+                "btn_how_to_2fa": "HOW TO GET 2FA?",
+        "select_lang": "🌐 Select Language / ভাষা নির্বাচন করুন:",
+        "lang_changed": "✅ ভাষা পরিবর্তন করে বাংলায় সেট করা হয়েছে!",
+        "balance_msg": "💳 ওয়ালেট ব্যালেন্স: ${bal}",
+        "report_msg": "📊 সকল অ্যাকাউন্ট রিপোর্ট\n\n✅ সফল: [{s}]\n⏳ রিভিউতে আছে: [{r}]\n❌ বাতিল হয়েছে: [{rej}]",
+        "select_cat": "📋 ক্যাটাগরি নির্বাচন করুন:",
+        "task_hidden": "❌ এই কাজটি বর্তমানে এডমিন দ্বারা হাইড করা আছে।",
+        "no_tasks": "🚧 এই টাস্কে বর্তমানে কাজ বন্ধ আছে।\nঅন্যগুলো ট্রাই করেন। ✅",
+        "choose_type": "🎯 কাজ বেছে নিন:",
+        "send_2fa_secret": "👉 অনুগ্রহ করে আপনার 2FA সিক্রেট কি (Secret Key) পাঠান",
+        "send_cookies": "👉 অনুগ্রহ করে আপনার কুকিজ (Cookies) ডাটা পাঠান",
+        "send_fb_uid": "👉 অনুগ্রহ করে আপনার ফেসবুক ইউআইডি (Facebook UID) পাঠান",
+        "invalid_2fa": "❌ ভুল 2FA সিক্রেট কি! দয়া করে আবার সঠিক কি পাঠান:",
+        "withdraw_dash": "💳 আপনার ব্যালেন্স ড্যাশবোর্ড\n\n💰 ব্যালেন্স: ${bal}\n💸 সর্বনিম্ন উইথড্র: $0.20\n💳 উইথড্র চার্জ: $0.03\n✅ আপনি পাবেন: ${rec}",
+        "withdraw_min_err": "❌ Unsuccessful balance: Minimum $0.20 required",
+        "select_meth": "💳 আপনার উইথড্র পদ্ধতি নির্বাচন করুন:",
+        "send_num": "📱 অনুগ্রহ করে আপনার {method} নম্বরটি পাঠান",
+        "enter_amt": "💰 অনুগ্রহ করে আপনার উইথড্র অ্যামাউন্ট লিখুন:",
+        "insufficient": "❌ আপনার পর্যাপ্ত ব্যালেন্স নেই।",
+        "min_amt_err": "❌ সর্বনিম্ন উইথড্র $0.20",
+        "check_info": "📋 দয়া করে আপনার তথ্য যাচাই করুন\n\n📱 নম্বর: {num}\n💳 মাধ্যম: {method}\n💵 পরিমাণ: ${amt}\n✅ আপনি পাবেন: ${rec}\n\n✅ সব তথ্য ঠিক থাকলে নিচের কন্ডিশন বাটনে চাপুন। 👇",
+        "btn_confirm": "✅ কনফার্ম করুন",
+        "pay_pending": "⏳ আপনার পেমেন্ট পেন্ডিং অবস্থায় আছে।\n\n👨‍💼 অনুগ্রহ করে এডমিনের অনুমোদনের জন্য অপেক্ষা করুন।",
+        "cookies_rec": "👉 কুকিজ পাওয়া গেছে। সামনে এগিয়ে যেতে নিচের বাটনে চাপুন।",
+        "btn_acc_reg": "✅ অ্যাকাউন্ট রেজিস্টার্ড",
+        "invite_check": "⚠️ আপনি কি ২ জন বন্ধুকে ইনভাইট করেছেন?\n\n❌ যদি আপনি ২ জন বন্ধুকে ইনভাইট না করে থাকেন, তবে আপনার রিপোর্টটি রিজেক্ট করা হবে।",
+        "invite_check_short": "✅ নিচে কনফার্ম করে আপনার রিপোর্ট সাবমিট করুন।",
+        "btn_subbed": "✅ হ্যাঁ | আমি সাবসক্রাইব করেছি",
+        "thanks_msg": "✅ ধন্যবাদ! অনুগ্রহ করে আনফলো করবেন না। নিয়ম মেনে চলুন।",
+        "report_received": "✅ আপনার রিপোর্টটি গ্রহণ করা হয়েছে!\n⏳ রিপোর্টের জন্য অপেক্ষা করুন",
+        "no_usernames_err": "❌ বর্তমানে কোনো ইউজার খালি নেই!",
+        "force_join_msg": "📢 আমাদের বটটি ব্যবহার করতে নিচের চ্যানেলগুলোতে জয়েন করুন:",
+        "not_joined_all": "❌ আপনি এখনো সবগুলো চ্যানেলে জয়েন করেননি! দয়া করে জয়েন করে আবার ভেরিফাই করুন।",
+        "verify_success": "✅ এখন আমাদের বটটি ব্যবহার করতে পারবেন।\nআমাদের চ্যানেলে জয়েন হওয়ার জন্য ধন্যবাদ! ❤️",
+        "support_msg": "⚠️ কোনো সমস্যা হলে অ্যাডমিনকে জানান।"
+    }
+}
+
+# ============================================================
+# DATABASE FUNCTIONS
+# ============================================================
+
+def _default_data():
+    return {
+        "users": {},
+        "submissions": {},
+        "withdrawals": {},
+        "dynamic_tasks": {},
+        "saved_usernames": [],
+        "task_password": "shuvo9",
+        "visibility": {"instagram_task": True, "facebook_task": True},
+        "fb_dump": [],
+        "ig_dump": []
+    }
+
+def _load():
+    """মেমরি ক্যাশ থেকে ডেটা রিটার্ন করে; প্রথমবার Firebase থেকে fetch করে ক্যাশ বানায়"""
+    global _DATA_CACHE
+    if _DATA_CACHE is not None:
+        return _DATA_CACHE
+    remote = _firebase_get()
+    d = remote if isinstance(remote, dict) else {}
+    if "saved_usernames" not in d:
+        d["saved_usernames"] = []
+    if "dynamic_tasks" not in d:
+        d["dynamic_tasks"] = {}
+    if "task_password" not in d:
+        d["task_password"] = "shuvo9"
+    if "visibility" not in d:
+        d["visibility"] = {"instagram_task": True, "facebook_task": True}
+    if "users" not in d:
+        d["users"] = {}
+    if "submissions" not in d:
+        d["submissions"] = {}
+    if "withdrawals" not in d:
+        d["withdrawals"] = {}
+    if "fb_dump" not in d:
+        d["fb_dump"] = []
+    if "ig_dump" not in d:
+        d["ig_dump"] = []
+    _DATA_CACHE = d
+    return _DATA_CACHE
+
+def _save(data):
+    """ক্যাশ আপডেট করে এবং Firebase-এ (persist) সেভ করে (redeploy/restart এ ডেটা থাকবে)"""
+    global _DATA_CACHE
+    _DATA_CACHE = data
+    ok = _firebase_patch({
+        "users": data.get("users", {}),
+        "submissions": data.get("submissions", {}),
+        "withdrawals": data.get("withdrawals", {}),
+        "dynamic_tasks": data.get("dynamic_tasks", {}),
+        "saved_usernames": data.get("saved_usernames", []),
+        "task_password": data.get("task_password", "shuvo9"),
+        "visibility": data.get("visibility", {"instagram_task": True, "facebook_task": True}),
+        "fb_dump": data.get("fb_dump", []),
+        "ig_dump": data.get("ig_dump", []),
+    })
+    if not ok:
+        logger.error("⚠️ ডেটা Firebase-এ সেভ করা যায়নি! (network/permission সমস্যা হতে পারে)")
+
+def get_or_create_user(user_id: int, username: str = ""):
+    with _lock:
+        data = _load()
+        uid = str(user_id)
+        if uid not in data["users"]:
+            data["users"][uid] = {
+                "user_id": user_id,
+                "username": username,
+                "balance": 0.0,
+                "language": "bn", 
+                "success_count": 0,
+                "review_count": 0,
+                "rejected_count": 0,
+            }
+            _save(data)
+        return data["users"][uid]
+
+def generate_profile_or_get_saved(task_category="instagram"):
+    """টাস্ক ক্যাটাগরির উপর ভিত্তি করে ডাটা জেনারেট করে"""
+    first_names = ["fatima", "wafaa", "ahmed", "youssef", "omar", "nour", "ali"]
+    last_names = ["Zayan", "Emad", "Khan", "Ahmed", "Ali", "Hassan"]
+    f_name = f"{random.choice(first_names)} {random.choice(last_names)}"
+    
+    if task_category == "facebook":
+        return f_name, "facebook_no_username"
+        
+    with _lock:
+        data = _load()
+        if data.get("saved_usernames"):
+            login_name = data["saved_usernames"].pop(0)
+            _save(data)
+            return f_name, login_name
+            
+    return None, None
+
+# ============================================================
+# CHECK JOIN FUNCTION
+# ============================================================
+async def is_user_joined_all(bot, user_id: int) -> bool:
+    if user_id == ADMIN_ID:
+        return True
+    for channel in REQUIRED_CHANNELS:
+        try:
+            member = await bot.get_chat_member(chat_id=channel, user_id=user_id)
+            if member.status in ["left", "kicked"]:
+                return False
+        except TelegramError:
+            return False
+    return True
+
+# ============================================================
+# PREMIUM BUTTON TEXT COMPATIBILITY
+# ============================================================
+def _restore_button_text(text: str) -> str:
+    """Restore the old internal button label after Telegram sends the visible
+    text without its separate Premium custom-emoji icon."""
+    if not isinstance(text, str):
+        return text
+
+    candidates = []
+    for _lang, _strings in LANGUAGES.items():
+        for _key, _value in _strings.items():
+            if isinstance(_value, str) and "\n" not in _value and len(_value) < 100:
+                candidates.append(_value)
+
+    candidates.extend([
+        "🔥𝗜𝗡𝗦𝗧𝗔𝗚𝗥𝗔𝗠 𝗧𝗔𝗦𝗞", "📘𝗙𝗔𝗖𝗘𝗕𝗢𝗢𝗞 𝗧𝗔𝗦𝗞",
+        "🔗 𝖱𝖾𝖿𝖾𝗋 & 𝖤𝖺𝗋𝗇", "➕ Add Task", "❌ Delete Task",
+        "👁️ Task Hide/Show", "👤 User Broadcast", "➕ Add Money",
+        "📥 Username Save", "🗂️ All Report", "🗑️ User Delete",
+        "🔐 Password Change", "📷 Instagram File", "📘 Facebook File",
+        "🎥 Work Video", "🔙 Return to main menu", "Withdraw",
+        "bKash", "Nagad", "Binance", "Approve", "Reject",
+    ])
+
+    seen = set()
+    for canonical in sorted(candidates, key=len, reverse=True):
+        if canonical in seen:
+            continue
+        seen.add(canonical)
+        stripped = _premiumize_button_text(canonical)
+        if stripped and text == stripped:
+            return canonical
+    return text
+
+def get_force_join_keyboard(lang: str):
+    btn_ch1 = InlineKeyboardButton("📢 Range Channel", url="https://t.me/range_channele")
+    btn_ch2 = InlineKeyboardButton("📸 Instagram TH", url="https://t.me/insagramth")
+    btn_verify = InlineKeyboardButton("✅ Verify Membership", callback_data="verify_join")
+    
+    _style(btn_ch1, 'primary')
+    _style(btn_ch2, 'primary')
+    _style(btn_verify, 'success')
+    
+    return InlineKeyboardMarkup([[btn_ch1], [btn_ch2], [btn_verify]])
+
+# ============================================================
+# KEYBOARDS DEFINITION
+# ============================================================
+
+def main_menu_keyboard(user_id: int, lang: str):
+    ln = LANGUAGES[lang]
+    
+    btn_tasks = KeyboardButton(ln["btn_tasks"])
+    btn_withdraw = KeyboardButton(ln["btn_withdraw"])
+    btn_report = KeyboardButton(ln["btn_report"])
+    btn_support = KeyboardButton(ln["btn_support"])
+    btn_language = KeyboardButton(ln["btn_language"])
+    
+    _style(btn_tasks, 'primary')
+    _style(btn_withdraw, 'success')
+    _style(btn_report, 'primary')
+    _style(btn_support, 'primary')
+    _style(btn_language, 'primary')
+    
+    buttons = [
+        [btn_tasks],
+        [btn_withdraw, btn_report],
+        [btn_support, btn_language],
+    ]
+    
+    if user_id == ADMIN_ID:
+        btn_admin = KeyboardButton(ln["btn_admin"])
+        _style(btn_admin, 'danger')
+        buttons.append([btn_admin])
+        
+    return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
+
+# ============================================================
+# USER STATE MANAGEMENT
+# ============================================================
+USER_STATE = {}
+
+# ============================================================
+# HANDLERS
+# ============================================================
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    if not user or not update.message:
+        return
+
+    # /start-এর সময় ব্যবহারকারীর saved language আগে বের করতে হবে।
+    # আগে এখানে `lang` define না থাকায় NameError হয়ে start handler কাজ করছিল না।
+    user_profile = get_or_create_user(user.id, user.username or "")
+    lang = user_profile.get("language", "bn")
+    if lang not in LANGUAGES:
+        lang = "bn"
+
+    if not await is_user_joined_all(context.bot, user.id):
+        await update.message.reply_text(
+            LANGUAGES[lang]["force_join_msg"],
+            reply_markup=get_force_join_keyboard(lang)
+        )
+        return
+
+    await update.message.reply_text(
+        LANGUAGES[lang]["welcome"].format(name=user.first_name),
+        reply_markup=main_menu_keyboard(user.id, lang)
+    )
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.effective_user or not update.message or not update.message.text:
+        return  # চ্যানেল পোস্ট বা অস্বাভাবিক আপডেট হলে চুপচাপ স্কিপ করো
+    user_id = update.effective_user.id
+    text = _restore_button_text(update.message.text.strip())
+    
+    db_data = _load()
+    user_profile = get_or_create_user(user_id, update.effective_user.username or "")
+    lang = user_profile.get("language", "bn")
+    ln = LANGUAGES[lang]
+
+    if not await is_user_joined_all(context.bot, user_id):
+        await update.message.reply_text(ln["force_join_msg"], reply_markup=get_force_join_keyboard(lang))
+        return
+    
+    if text == "HOW TO GET 2FA?":
+        vid_msg = "📹 2FA সেটআপ করার ভিডিও লিংক:\n\nhttps://t.me/range_channele/955" if lang == "bn" else "📹 How to setup 2FA Video Link:\n\nhttps://t.me/range_channele/955"
+        await update.message.reply_text(vid_msg)
+        return
+
+    # --------------------------------------------------------
+    # ADMIN FLOWS
+    # --------------------------------------------------------
+
+    if user_id == ADMIN_ID and USER_STATE.get(user_id, {}).get("step") == "admin_change_password":
+        USER_STATE.pop(user_id, None)
+        with _lock:
+            data = _load()
+            data["task_password"] = text
+            _save(data)
+        await update.message.reply_text(f"🔐 সফলভাবে নতুন পাসওয়ার্ড সেভ করা হয়েছে!\nবর্তমান পাসওয়ার্ড: `{text}`", parse_mode="Markdown", reply_markup=main_menu_keyboard(user_id, lang))
+        return
+
+    if user_id == ADMIN_ID and USER_STATE.get(user_id, {}).get("step") == "admin_save_username":
+        USER_STATE.pop(user_id, None)
+        raw_names = text.replace(",", " ").split()
+        with _lock:
+            data = _load()
+            for r_name in raw_names:
+                if r_name not in data["saved_usernames"]:
+                    data["saved_usernames"].append(r_name)
+            _save(data)
+        await update.message.reply_text(f"✅ সফলভাবে ইউজারনেম সেভ করা হয়েছে!\nবর্তমানে মোট সেভ করা ইউজারনেম: {len(data['saved_usernames'])} টি।", reply_markup=main_menu_keyboard(user_id, lang))
+        return
+
+    if user_id == ADMIN_ID and USER_STATE.get(user_id, {}).get("step") == "add_task_button_name":
+        button_name = text.strip()
+        
+        if not button_name:
+            await update.message.reply_text("❌ বাটনের নাম খালি থাকতে পারে না!")
+            return
+        
+        USER_STATE[user_id]["task_name"] = button_name
+        USER_STATE[user_id]["step"] = "select_category_for_task"
+        
+        btn_ig = InlineKeyboardButton("📸 Instagram", callback_data="adm_cat:instagram:")
+        btn_fb = InlineKeyboardButton("📘 Facebook", callback_data="adm_cat:facebook:")
+        btn_cancel = InlineKeyboardButton("❌ Cancel", callback_data="cancel_add_task")
+
+        _style(btn_ig, 'primary')
+        _style(btn_fb, 'success')
+        _style(btn_cancel, 'danger')
+
+        kb = InlineKeyboardMarkup([[btn_ig, btn_fb], [btn_cancel]])
+        await update.message.reply_text(f"📌 বাটন নাম: {button_name}\n\nকোন ক্যাটাগরিতে যুক্ত করবেন?", reply_markup=kb)
+        return
+
+    if user_id == ADMIN_ID and USER_STATE.get(user_id, {}).get("step") == "admin_task_name":
+        if "selected_task_name" in USER_STATE[user_id]:
+            try:
+                price = float(text)
+                USER_STATE[user_id]["task_price"] = price
+                USER_STATE[user_id]["step"] = "admin_task_rules"
+                await update.message.reply_text("📝 টাস্কের নিয়মাবলী (Rules) লিখুন:")
+            except:
+                await update.message.reply_text("❌ সঠিক সংখ্যা বা ডেসিমাল অ্যামাউন্ট দিন।")
+        else:
+            USER_STATE[user_id]["task_name"] = text
+            USER_STATE[user_id]["step"] = "admin_task_price"
+            await update.message.reply_text("💵 টাস্কের দাম কত হবে লিখুন (যেমন: 3.5):")
+        return
+
+    if user_id == ADMIN_ID and USER_STATE.get(user_id, {}).get("step") == "admin_task_price":
+        try:
+            price = float(text)
+            USER_STATE[user_id]["task_price"] = price
+            USER_STATE[user_id]["step"] = "admin_task_rules"
+            await update.message.reply_text("📝 টাস্কের নিয়মাবলী (Rules) লিখুন:")
+        except:
+            await update.message.reply_text("❌ সঠিক সংখ্যা বা ডেসিমাল অ্যামাউন্ট দিন।")
+        return
+
+    if user_id == ADMIN_ID and USER_STATE.get(user_id, {}).get("step") == "admin_task_rules":
+        USER_STATE[user_id]["task_rules"] = text
+        USER_STATE[user_id]["step"] = "admin_task_type"
+        
+        btn_c_work = InlineKeyboardButton("🍪 Cookies Work", callback_data="adm_t_type:cookies")
+        btn_2_work = InlineKeyboardButton("🛡️ 2FA Work", callback_data="adm_t_type:2fa")
+        
+        _style(btn_c_work, 'success')
+        _style(btn_2_work, 'primary')
+        
+        kb = InlineKeyboardMarkup([[btn_c_work], [btn_2_work]])
+        await update.message.reply_text("🎯 এটি কি ধরনের কাজ হবে নিচে থেকে সিলেক্ট করুন:", reply_markup=kb)
+        return
+
+    if user_id == ADMIN_ID and USER_STATE.get(user_id, {}).get("step") == "broadcast_msg":
+        USER_STATE.pop(user_id, None)
+        all_users = db_data["users"].keys()
+        count = 0
+        for u in all_users:
+            try:
+                await context.bot.send_message(chat_id=int(u), text=f"📢 ADMIN NOTICE:\n\n{text}")
+                count += 1
+            except:
+                pass
+        await update.message.reply_text(f"✅ Broadcast sent to {count} users.", reply_markup=main_menu_keyboard(user_id, lang))
+        return
+
+    if user_id == ADMIN_ID and USER_STATE.get(user_id, {}).get("step") == "add_money_uid":
+        USER_STATE[user_id]["target_uid"] = text
+        USER_STATE[user_id]["step"] = "add_money_amount"
+        await update.message.reply_text("💵 Enter Amount to Add:")
+        return
+        
+    if user_id == ADMIN_ID and USER_STATE.get(user_id, {}).get("step") == "add_money_amount":
+        try:
+            amount = float(text)
+            target = USER_STATE[user_id]["target_uid"]
+            with _lock:
+                data = _load()
+                if target in data["users"]:
+                    data["users"][target]["balance"] = round(data["users"][target]["balance"] + amount, 2)
+                    _save(data)
+                    await update.message.reply_text(f"✅ Added ${amount} to UID {target}")
+                    try:
+                        await context.bot.send_message(chat_id=int(target), text=f"💰 Admin added ${amount} to your balance!")
+                    except:
+                        pass
+                else:
+                    await update.message.reply_text("❌ User not found.")
+        except:
+            await update.message.reply_text("❌ Invalid Amount.")
+        USER_STATE.pop(user_id, None)
+        return
+
+    # --- WITHDRAW PROCESS ---
+    if USER_STATE.get(user_id, {}).get("step") == "withdraw_num":
+        if text == ln["btn_cancel"] or text.lower() == "cancel":
+            USER_STATE.pop(user_id, None)
+            await update.message.reply_text(ln["btn_cancel"], reply_markup=main_menu_keyboard(user_id, lang))
+            return
+        USER_STATE[user_id]["number"] = text
+        USER_STATE[user_id]["step"] = "withdraw_amt"
+        await update.message.reply_text(ln["enter_amt"])
+        return
+
+    if USER_STATE.get(user_id, {}).get("step") == "withdraw_amt":
+        try:
+            amt = float(text)
+            method = USER_STATE[user_id]["method"]
+            num = USER_STATE[user_id]["number"]
+
+            if amt < 0.20:
+                await update.message.reply_text("❌ সর্বনিম্ন উত্তোলন $0.20" if lang == "bn" else "❌ Minimum withdraw is $0.20")
+                USER_STATE.pop(user_id, None)
+                return
+            if amt > user_profile["balance"]:
+                await update.message.reply_text(ln["insufficient"])
+                USER_STATE.pop(user_id, None)
+                return
+
+            charge = 0.03
+            receive = round(amt - charge, 4)
+
+            USER_STATE[user_id]["amt"] = amt
+            USER_STATE[user_id]["receive"] = receive
+
+            icon = "🟡" if method == "Binance" else "📱"
+            if lang == "bn":
+                label = "Binance UID" if method == "Binance" else "নম্বর"
+                confirm_text = (
+                    f"📋 দয়া করে আপনার তথ্য যাচাই করুন\n\n"
+                    f"{icon} {label}: {num}\n"
+                    f"💳 মাধ্যম: {method}\n"
+                    f"💵 পরিমাণ: ${amt}\n"
+                    f"💳 চার্জ: ${charge}\n"
+                    f"✅ আপনি পাবেন: ${receive}\n\n"
+                    f"✅ সব তথ্য ঠিক থাকলে নিচের Confirm বাটনে চাপুন। 👇"
+                )
+            else:
+                label = "Binance UID" if method == "Binance" else "Number"
+                confirm_text = (
+                    f"📋 Please Check Your Info\n\n"
+                    f"{icon} {label}: {num}\n"
+                    f"💳 Method: {method}\n"
+                    f"💵 Amount: ${amt}\n"
+                    f"💳 Fee: ${charge}\n"
+                    f"✅ Receive: ${receive}\n\n"
+                    f"✅ If All Information Is Correct, Please Tap the Confirm Button. 👇"
+                )
+            
+            btn_cnf = KeyboardButton(ln["btn_confirm"])
+            btn_cnc = KeyboardButton(ln["btn_cancel"])
+            _style(btn_cnf, 'success')
+            _style(btn_cnc, 'danger')
+            
+            kb = ReplyKeyboardMarkup([[btn_cnf, btn_cnc]], resize_keyboard=True)
+            USER_STATE[user_id]["step"] = "withdraw_confirm"
+            await update.message.reply_text(confirm_text, reply_markup=kb)
+        except:
+            await update.message.reply_text("❌ ভুল ফরম্যাট।" if lang == "bn" else "❌ Invalid format.")
+            USER_STATE.pop(user_id, None)
+        return
+
+    if USER_STATE.get(user_id, {}).get("step") == "withdraw_confirm":
+        if text == ln["btn_confirm"]:
+            state = USER_STATE[user_id]
+            w_id = str(uuid.uuid4())[:8]
+            with _lock:
+                data = _load()
+                data["withdrawals"][w_id] = {
+                    "w_id": w_id, "user_id": user_id, "username": user_profile["username"],
+                    "number": state["number"], "method": state["method"], "amount": state["amt"], "status": "pending"
+                }
+                _save(data)
+            await update.message.reply_text(ln["pay_pending"], reply_markup=main_menu_keyboard(user_id, lang))
+            
+            btn_w_ap = InlineKeyboardButton("✅ APPROVE", callback_data=f"w_app:{w_id}")
+            btn_w_rj = InlineKeyboardButton("❌ REJECT", callback_data=f"w_rej:{w_id}")
+            _style(btn_w_ap, 'success')
+            _style(btn_w_rj, 'danger')
+            
+            admin_kb = InlineKeyboardMarkup([[btn_w_ap, btn_w_rj]])
+            label = "Binance UID" if state["method"] == "Binance" else "Number"
+            admin_text = (
+                f"💸 New Payment Request\n\n"
+                f"👤 User: @{user_profile['username']}\n🆔 UID: {user_id}\n"
+                f"{'🟡' if state['method'] == 'Binance' else '📱'} {label}: {state['number']}\n"
+                f"💳 Method: {state['method']}\n"
+                f"💵 Amount: ${state['amt']}\n"
+                f"✅ Send: ${state.get('receive', '')}"
+            )
+            await context.bot.send_message(
+                chat_id=ADMIN_ID,
+                text=admin_text,
+                reply_markup=admin_kb
+            )
+        else:
+            await update.message.reply_text(ln["btn_cancel"], reply_markup=main_menu_keyboard(user_id, lang))
+        USER_STATE.pop(user_id, None)
+        return
+
+    # --- FACEBOOK UID SUBMISSION ---
+    if USER_STATE.get(user_id, {}).get("step") == "waiting_for_fb_uid":
+        if text == ln["btn_cancel"] or text.lower() == "cancel":
+            USER_STATE.pop(user_id, None)
+            await update.message.reply_text(ln["btn_cancel"], reply_markup=main_menu_keyboard(user_id, lang))
+            return
+        USER_STATE[user_id]["fb_uid"] = text
+        USER_STATE[user_id]["step"] = "waiting_for_cookies"
+        
+        btn_cnc = KeyboardButton(ln["btn_cancel"])
+        _style(btn_cnc, 'danger')
+        await update.message.reply_text(ln["send_cookies"], reply_markup=ReplyKeyboardMarkup([[btn_cnc]], resize_keyboard=True))
+        return
+
+    # --- COOKIES SUBMISSION ---
+    if USER_STATE.get(user_id, {}).get("step") == "waiting_for_cookies":
+        if text == ln["btn_cancel"] or text.lower() == "cancel":
+            USER_STATE.pop(user_id, None)
+            await update.message.reply_text(ln["btn_cancel"], reply_markup=main_menu_keyboard(user_id, lang))
+            return
+        if len(text.strip()) < 100:
+            await update.message.reply_text("❌ কুকি অনেক ছোট (সর্বনিম্ন ১০০ ক্যারেক্টার লাগবে)। সঠিক কুকি ডেটা দিন।" if lang == "bn" else "❌ Cookie is too short (minimum 100 characters). Please provide valid cookie data.")
+            return
+        USER_STATE[user_id]["cookies_data"] = text
+        USER_STATE[user_id]["step"] = "cookies_submitted"
+        
+        btn_reg = KeyboardButton(ln["btn_acc_reg"])
+        btn_cnc = KeyboardButton(ln["btn_cancel"])
+        _style(btn_reg, 'success')
+        _style(btn_cnc, 'danger')
+        
+        kb = ReplyKeyboardMarkup([[btn_reg], [btn_cnc]], resize_keyboard=True)
+        await update.message.reply_text(ln["cookies_rec"], reply_markup=kb)
+        return
+
+    if text == ln["btn_acc_reg"]:
+        state = USER_STATE.get(user_id)
+        if state and (state.get("step") == "cookies_submitted" or state.get("step") == "2fa_verify"):
+            btn_sub = KeyboardButton(ln["btn_subbed"])
+            btn_cnc = KeyboardButton(ln["btn_cancel"])
+            _style(btn_sub, 'success')
+            _style(btn_cnc, 'danger')
+            
+            kb = ReplyKeyboardMarkup([[btn_sub], [btn_cnc]], resize_keyboard=True)
+            if state.get("step") == "cookies_submitted":
+                await update.message.reply_text(ln["invite_check"], reply_markup=kb)
+                USER_STATE[user_id]["step"] = "cookies_final_confirm"
+                cred_msg_id = state.get("cred_msg_id")
+                if cred_msg_id:
+                    try: await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=cred_msg_id)
+                    except: pass
+            else:
+                await update.message.reply_text(ln["invite_check_short"], reply_markup=kb)
+                USER_STATE[user_id]["step"] = "2fa_final_confirm"
+                cred_msg_id = state.get("cred_msg_id")
+                if cred_msg_id:
+                    try: await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=cred_msg_id)
+                    except: pass
+            return
+
+    if text == ln["btn_subbed"]:
+        state = USER_STATE.get(user_id)
+        if state and state.get("step") == "2fa_final_confirm":
+            sub_id = str(uuid.uuid4())[:8]
+            file_path = f"submission_{sub_id}.txt"
+            if state.get("cat") == "facebook":
+                content_text = f"Dynamic 2FA Report\nTask Name: {state.get('t_name','')}\nFirst name: {state['f_name']}\nPassword: {state['pass']}\n2FA Key: {state.get('secret','')}"
+            else:
+                content_text = f"Dynamic 2FA Report\nTask Name: {state.get('t_name','')}\nUsername: {state['login']}\nPassword: {state['pass']}\n2FA Key: {state.get('secret','')}"
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(content_text)
+                
+            with _lock:
+                d = _load()
+                d["submissions"][sub_id] = {
+                    "sub_id": sub_id, "user_id": user_id, "username": user_profile["username"],
+                    "task_type": "2fa", "task_id": state.get("task_id"), "login": state['login'], "fb_uid": state.get("fb_uid", ""), "category": state.get("cat"), "status": "pending"
+                }
+                d["users"][str(user_id)]["review_count"] += 1
+                _save(d)
+                
+            with open(file_path, "rb") as f:
+                await context.bot.send_document(chat_id=ADMIN_ID, document=f, caption=f"实时 Dynamic 2FA Task\nUser: @{user_profile['username']}\nUID: {user_id}")
+            os.remove(file_path)
+
+            dump_entry = {
+                "task": state.get("t_name", "অজানা টাস্ক"),
+                "username": state.get('f_name') if state.get("cat") == "facebook" else state.get('login'),
+                "password": state.get('pass', ''),
+                "twofa": state.get('secret', '')
+            }
+            add_to_id_dump(state.get("cat", "instagram"), dump_entry)
+
+            await update.message.reply_text(ln["report_received"], reply_markup=main_menu_keyboard(user_id, lang))
+            USER_STATE.pop(user_id, None)
+            return
+
+        if state and state.get("step") == "cookies_final_confirm":
+            sub_id = str(uuid.uuid4())[:8]
+            file_path = f"submission_{sub_id}.txt"
+            if state.get("cat") == "facebook":
+                content_text = f"Task Name: {state['t_name']}\nFirst name: {state['f_name']}\nFacebook UID: {state.get('fb_uid','')}\nPassword: {state['pass']}\nCookies: {state['cookies_data']}"
+            else:
+                content_text = f"Task Name: {state['t_name']}\nUsername: {state['login']}\nPassword: {state['pass']}\nCookies: {state['cookies_data']}"
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(content_text)
+            with _lock:
+                data = _load()
+                data["submissions"][sub_id] = {
+                    "sub_id": sub_id, "user_id": user_id, "username": user_profile["username"],
+                    "task_type": "cookies", "task_id": state.get("task_id"), "login": state['login'], "fb_uid": state.get("fb_uid", ""), "category": state.get("cat"), "status": "pending"
+                }
+                data["users"][str(user_id)]["review_count"] += 1
+                _save(data)
+            with open(file_path, "rb") as f:
+                await context.bot.send_document(chat_id=ADMIN_ID, document=f, caption=f"🍪 Dynamic Cookies Task Submission\nUser: @{user_profile['username']}\nUID: {user_id}\nSub ID: {sub_id}")
+            os.remove(file_path)
+
+            dump_entry = {
+                "task": state.get("t_name", "অজানা টাস্ক"),
+                "username": state.get('f_name') if state.get("cat") == "facebook" else state.get('login'),
+                "password": state.get('pass', ''),
+                "twofa": ""
+            }
+            add_to_id_dump(state.get("cat", "instagram"), dump_entry)
+
+            await update.message.reply_text(ln["report_received"], reply_markup=main_menu_keyboard(user_id, lang))
+            USER_STATE.pop(user_id, None)
+            return
+
+    # --- 2FA SECRET KEY SUBMISSION ---
+    if USER_STATE.get(user_id, {}).get("step") == "waiting_for_2fa":
+        if text == ln["btn_cancel"] or text.lower() == "cancel":
+            await update.message.reply_text(ln["btn_cancel"], reply_markup=main_menu_keyboard(user_id, lang))
+            USER_STATE.pop(user_id, None)
+            return
+        user_secret = text.replace(" ", "").upper()
+
+        # আসল 2FA secret key শুধু A-Z আর 2-7 অক্ষর দিয়ে তৈরি হয় (base32),
+        # আর সাধারণত ১৬-৬৪ ক্যারেক্টার লম্বা হয়। এর বাইরে কিছু হলে (0,1,8,9,
+        # স্পেশাল ক্যারেক্টার, বা খুব ছোট/এলোমেলো টেক্সট) সেটা আসল secret
+        # হতে পারে না — তাই সাথে সাথে বাতিল করে দেওয়া হচ্ছে।
+        is_valid_format = (
+            16 <= len(user_secret) <= 64
+            and re.fullmatch(r"[A-Z2-7]+", user_secret) is not None
+        )
+        if not is_valid_format:
+            await update.message.reply_text(ln["invalid_2fa"])
+            return
+        try:
+            totp = pyotp.TOTP(user_secret)
+            current_code = totp.now()
+        except:
+            await update.message.reply_text(ln["invalid_2fa"])
+            return
+
+        state = USER_STATE.get(user_id)
+        state["secret"] = user_secret
+        state["step"] = "2fa_verify"
+        remaining = 30 - (int(datetime.datetime.now().timestamp()) % 30)
+        
+        btn_reg = KeyboardButton(ln["btn_acc_reg"])
+        btn_cnc = KeyboardButton(ln["btn_cancel"])
+        _style(btn_reg, 'success')
+        _style(btn_cnc, 'danger')
+        reg_kb = ReplyKeyboardMarkup([[btn_reg], [btn_cnc]], resize_keyboard=True)
+        
+        vmsg = "👉 2FA কি পাওয়া গেছে। এবার নিচের প্যানেল থেকে ভেরিফাই করে সাবমিট করুন।" if lang == "bn" else "👉 2FA Key Received. Now verify and submit using the panel below."
+        await update.message.reply_text(vmsg, reply_markup=reg_kb)
+
+        btn_ref = InlineKeyboardButton("🔄 Refresh", callback_data="refresh_2fa_code")
+        _style(btn_ref, 'primary')
+        inline_kb = InlineKeyboardMarkup([[btn_ref]])
+        
+        msg = await update.message.reply_text(
+            f"╔══════════╗\n"
+            f"🔑 Your 2FA Code\n"
+            f"╚══════════╝\n\n"
+            f"🔢 Code : `{current_code}`\n\n"
+            f"⏱️ Valid : {remaining}s\n"
+            f"━━━━━━━━━━",
+            parse_mode="Markdown",
+            reply_markup=inline_kb
+        )
+        state["code_msg_id"] = msg.message_id
+        return
+
+    # --- MENU NAVIGATION ---
+    if text in ["YOUR REPORT", "📊 YOUR REPORT", "📊 আপনার রিপোর্ট"]:
+        await update.message.reply_text(
+            ln["report_msg"].format(s=user_profile.get('success_count', 0), r=user_profile.get('review_count', 0), rej=user_profile.get('rejected_count', 0)),
+            reply_markup=main_menu_keyboard(user_id, lang)
+        )
+        return
+
+    if text in ["SUPPORT", "ℹ️ SUPPORT", "ℹ️ সাপোর্ট (SUPPORT)"]:
+        btn_adm = InlineKeyboardButton("𓆩𓆩 𝗢𝗿𝗶𝘃𝗲𝘅 𝗔𝗱𝗺𝗶𝗻 𓆪𓆪", url="https://t.me/adim_shuvo")
+        _style(btn_adm, 'primary')
+        inline_kb = InlineKeyboardMarkup([[btn_adm]])
+        support_text = "🛠️ Admin Support\n\n⚠️ Need help?\n💬 Contact Admin for quick support."
+        await update.message.reply_text(support_text, reply_markup=inline_kb)
+        return
+
+    if text in ["LANGUAGE", "🌐 LANGUAGE", "🌐 ভাষা (LANGUAGE)"]:
+        btn_bn = InlineKeyboardButton("🇧🇩 বাংলা", callback_data="lang_bn")
+        btn_en = InlineKeyboardButton("🇬🇧 English", callback_data="lang_en")
+        _style(btn_bn, 'success')
+        _style(btn_en, 'primary')
+        
+        kb = InlineKeyboardMarkup([[btn_bn, btn_en]])
+        await update.message.reply_text(ln["select_lang"], reply_markup=kb)
+        return
+
+    if text == "BACK":
+        btn_ig_cat = KeyboardButton("INSTAGRAM TASK")
+        btn_fb_cat = KeyboardButton("FACEBOOK TASK")
+        btn_back = KeyboardButton(ln["btn_back"])
+
+        _style(btn_ig_cat, 'primary')
+        _style(btn_fb_cat, 'success')
+        _style(btn_back, 'danger')
+
+        vertical_keyboard = [
+            [btn_ig_cat],
+            [btn_fb_cat],
+            [btn_back]
+        ]
+        await update.message.reply_text(
+            ln["select_cat"],
+            reply_markup=ReplyKeyboardMarkup(vertical_keyboard, resize_keyboard=True)
+        )
+        return
+
+    if text in ["TASK", "📋 TASKS", "📋 কাজ (TASKS)"]:
+        btn_ig_cat = KeyboardButton("INSTAGRAM TASK")
+        btn_fb_cat = KeyboardButton("FACEBOOK TASK")
+        btn_back = KeyboardButton(ln["btn_back"])
+
+        _style(btn_ig_cat, 'primary')
+        _style(btn_fb_cat, 'success')
+        _style(btn_back, 'danger')
+
+        vertical_keyboard = [
+            [btn_ig_cat],
+            [btn_fb_cat],
+            [btn_back]
+        ]
+
+        await update.message.reply_text(
+            ln["select_cat"],
+            reply_markup=ReplyKeyboardMarkup(vertical_keyboard, resize_keyboard=True)
+        )
+        return
+
+    _CAT_BUTTON_MAP = {
+        "INSTAGRAM TASK": "instagram",
+        "FACEBOOK TASK": "facebook",
+        # পুরনো টেক্সট (backward compatibility)
+        "🔥𝗜𝗡𝗦𝗧𝗔𝗚𝗥𝗔𝗠 𝗧𝗔𝗦𝗞": "instagram",
+        "📘𝗙𝗔𝗖𝗘𝗕𝗢𝗢𝗞 𝗧𝗔𝗦𝗞": "facebook",
+    }
+
+    if text in _CAT_BUTTON_MAP:
+        cat_key = _CAT_BUTTON_MAP[text]
+        if not db_data["visibility"].get(f"{cat_key}_task", True) and user_id != ADMIN_ID:
+            await update.message.reply_text(ln["task_hidden"])
+            return
+            
+        active_tasks = [t for t in db_data.get("dynamic_tasks", {}).values() if t.get("category") == cat_key]
+        if not active_tasks:
+            await update.message.reply_text(ln["no_tasks"])
+            return
+            
+        sub_tasks = []
+        for t in active_tasks:
+            btn_t = KeyboardButton(f"{t['name']} (${t['price']:.4f})")
+            _style(btn_t, 'success')
+            sub_tasks.append([btn_t])
+            
+        btn_cnc = KeyboardButton(ln["btn_cancel"])
+        _style(btn_cnc, 'danger')
+        sub_tasks.append([btn_cnc])
+        await update.message.reply_text(ln["choose_type"], reply_markup=ReplyKeyboardMarkup(sub_tasks, resize_keyboard=True))
+        return
+
+    all_tasks_for_match = db_data.get("dynamic_tasks", {})
+    target_task = None
+    for tid, t in all_tasks_for_match.items():
+        label = f"{t['name']} (${t['price']:.4f})"
+        if text.casefold() == label.casefold():
+            target_task = t
+            break
+
+    if target_task:
+        tid = target_task["id"]
+        session_id = str(uuid.uuid4())
+        USER_STATE[user_id] = {"task_id": tid, "task_type": target_task["type"], "cat": target_task.get("category"), "session_id": session_id}
+        asyncio.create_task(task_timeout_watcher(context, user_id, update.effective_chat.id, session_id))
+
+        btn_str = KeyboardButton(ln["btn_start"])
+        btn_vid = KeyboardButton(ln["btn_video"])
+        btn_cnc = KeyboardButton(ln["btn_cancel"])
+
+        _style(btn_str, 'success')
+        _style(btn_vid, 'primary')
+        _style(btn_cnc, 'danger')
+
+        kb = ReplyKeyboardMarkup([[btn_str], [btn_vid], [btn_cnc]], resize_keyboard=True)
+        rules_msg = f"⭐️🛡  *{target_task['name']}*\n\n💵 Payout: ${target_task['price']:.4f}\n\n📝 *Rules:*\n{target_task['rules']}\n\n🚀 Tap START to continue."
+        await update.message.reply_text(rules_msg, parse_mode="Markdown", reply_markup=kb)
+        return
+
+    if text == ln["btn_video"] or text == "🎥 ভিডিও দেখুন":
+        state = USER_STATE.get(user_id, {})
+        task_id = state.get("task_id")
+        t_data = db_data.get("dynamic_tasks", {}).get(task_id) if task_id else None
+        if t_data and t_data.get("video_file_id"):
+            cap = f"🎥 {t_data['name']} — কীভাবে কাজটি করবেন" if lang == "bn" else f"🎥 {t_data['name']} — How to complete this task"
+            await update.message.reply_video(video=t_data["video_file_id"], caption=cap)
+        else:
+            await update.message.reply_text("❌ এই টাস্কের জন্য এখনো কোনো ভিডিও যুক্ত করা হয়নি।" if lang == "bn" else "❌ No video has been assigned to this task yet.")
+        return
+
+    if text == ln["btn_start"]:
+        state = USER_STATE.get(user_id)
+        if state and "task_id" in state:
+            t_data = db_data["dynamic_tasks"].get(state["task_id"])
+            if t_data:
+                task_cat = state.get("cat", "instagram")
+                f_name, login_name = generate_profile_or_get_saved(task_category=task_cat)
+                
+                if login_name is None and task_cat == "instagram":
+                    await update.message.reply_text(ln["no_usernames_err"])
+                    return
+                    
+                pass_val = db_data.get("task_password", "shuvo9")
+                state["login"] = login_name
+                state["pass"] = pass_val
+                state["f_name"] = f_name
+                state["t_name"] = t_data["name"]
+                
+                if task_cat == "facebook":
+                    mono_msg = (
+                        f"First name: `{f_name}`\n"
+                        f"Password: `{pass_val}`"
+                    )
+                else:
+                    mono_msg = (
+                        f"First name: `{f_name}`\n"
+                        f"Login: `{login_name}`\n"
+                        f"Password: `{pass_val}`"
+                    )
+                    
+                cred_msg = await update.message.reply_text(mono_msg, parse_mode="Markdown")
+                state["cred_msg_id"] = cred_msg.message_id
+                
+                if state["task_type"] == "2fa":
+                    state["step"] = "waiting_for_2fa"
+                    btn_2fa = KeyboardButton(ln["btn_how_to_2fa"])
+                    btn_cnc = KeyboardButton(ln["btn_cancel"])
+                    _style(btn_2fa, 'primary')
+                    _style(btn_cnc, 'danger')
+                    task_2fa_kb = ReplyKeyboardMarkup([[btn_2fa], [btn_cnc]], resize_keyboard=True)
+                    await update.message.reply_text(ln["send_2fa_secret"], reply_markup=task_2fa_kb)
+                else:
+                    if task_cat == "facebook":
+                        state["step"] = "waiting_for_fb_uid"
+                        btn_cnc = KeyboardButton(ln["btn_cancel"])
+                        _style(btn_cnc, 'danger')
+                        await update.message.reply_text(ln["send_fb_uid"], reply_markup=ReplyKeyboardMarkup([[btn_cnc]], resize_keyboard=True))
+                    else:
+                        state["step"] = "waiting_for_cookies"
+                        btn_cnc = KeyboardButton(ln["btn_cancel"])
+                        _style(btn_cnc, 'danger')
+                        await update.message.reply_text(ln["send_cookies"], reply_markup=ReplyKeyboardMarkup([[btn_cnc]], resize_keyboard=True))
+            return
+
+    if text in ["WITHDRAW", "📤 WITHDRAW", "📤 টাকা তুলুন"]:
+        bal = user_profile["balance"]
+        btn_wth = InlineKeyboardButton("Withdraw", callback_data="start_withdraw")
+        _style(btn_wth, 'success')
+        inline_wb = InlineKeyboardMarkup([[btn_wth]])
+        await update.message.reply_text(ln["withdraw_dash"].format(bal=bal, rec=max(0.0, bal - 0.03)), reply_markup=inline_wb)
+        return
+
+    # --- ADMIN CONTROL DASHBOARD PANEL ---
+    if text in ["ADMIN PANEL", "🛠️ ADMIN PANEL", "🛠️ ENDMIN PANEL", "🛠️ এডমিন প্যানেল"] and user_id == ADMIN_ID:
+        btn_add_t = KeyboardButton("➕ Add Task")
+        btn_del_t = KeyboardButton("❌ Delete Task")
+        btn_vis_t = KeyboardButton("👁️ Task Hide/Show")
+        btn_brd_t = KeyboardButton("👤 User Broadcast")
+        btn_add_m = KeyboardButton("➕ Add Money")
+        btn_sav_u = KeyboardButton("📥 Username Save")
+        btn_all_r = KeyboardButton("🗂️ All Report")
+        btn_del_u = KeyboardButton("🗑️ User Delete")
+        btn_pwd_t = KeyboardButton("🔐 Password Change")
+        btn_ig_file = KeyboardButton("📷 Instagram File")
+        btn_fb_file = KeyboardButton("📘 Facebook File")
+        btn_work_vid = KeyboardButton("🎥 Work Video")
+        btn_back_m = KeyboardButton(ln["btn_back"])
+        
+        _style(btn_add_t, 'success')
+        _style(btn_del_t, 'danger')
+        _style(btn_vis_t, 'primary')
+        _style(btn_brd_t, 'primary')
+        _style(btn_add_m, 'success')
+        _style(btn_sav_u, 'success')
+        _style(btn_all_r, 'primary')
+        _style(btn_del_u, 'danger')
+        _style(btn_pwd_t, 'primary')
+        _style(btn_ig_file, 'primary')
+        _style(btn_fb_file, 'primary')
+        _style(btn_work_vid, 'success')
+        _style(btn_back_m, 'danger')
+        
+        kb = ReplyKeyboardMarkup([
+            [btn_add_t, btn_del_t],
+            [btn_vis_t, btn_brd_t],
+            [btn_add_m, btn_sav_u],
+            [btn_all_r, btn_del_u],
+            [btn_pwd_t, btn_work_vid],
+            [btn_ig_file, btn_fb_file],
+            [btn_back_m]
+        ], resize_keyboard=True)
+        await update.message.reply_text("🛠️ Admin Control Dashboard", reply_markup=kb)
+        return
+
+    if user_id == ADMIN_ID and text in ["INSTAGRAM FILE", "FACEBOOK FILE"]:
+        category = "instagram" if text == "INSTAGRAM FILE" else "facebook"
+        key = "ig_dump" if category == "instagram" else "fb_dump"
+        label = "Instagram" if category == "instagram" else "Facebook"
+
+        with _lock:
+            d = _load()
+            dump_list = d.get(key, [])
+            if not dump_list:
+                await update.message.reply_text(f"❌ এখনো পর্যন্ত কোনো নতুন {label} সাবমিশন জমা হয়নি।")
+                return
+
+            # টাস্ক নাম অনুযায়ী গ্রুপ করা হচ্ছে
+            grouped = {}
+            for entry in dump_list:
+                task_name = entry.get("task", "অজানা টাস্ক")
+                grouped.setdefault(task_name, []).append(entry)
+
+            # ---------- Excel (.xlsx) ফাইল তৈরি ----------
+            wb = Workbook()
+            ws = wb.active
+            ws.title = label[:31]
+
+            headers = ["Task Name", "Username", "Password", "2FA"]
+            ws.append(headers)
+            header_fill = PatternFill(start_color="305496", end_color="305496", fill_type="solid")
+            header_font = Font(name="Arial", bold=True, color="FFFFFF")
+            for col_idx, _ in enumerate(headers, start=1):
+                cell = ws.cell(row=1, column=col_idx)
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+
+            group_fills = [
+                PatternFill(start_color="DCE6F1", end_color="DCE6F1", fill_type="solid"),
+                PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid"),
+            ]
+            row_num = 2
+            for g_idx, (task_name, entries) in enumerate(grouped.items()):
+                fill = group_fills[g_idx % 2]
+                for e in entries:
+                    ws.cell(row=row_num, column=1, value=task_name).fill = fill
+                    ws.cell(row=row_num, column=2, value=e.get("username", "")).fill = fill
+                    ws.cell(row=row_num, column=3, value=e.get("password", "")).fill = fill
+                    ws.cell(row=row_num, column=4, value=e.get("twofa", "")).fill = fill
+                    for col_idx in range(1, 5):
+                        ws.cell(row=row_num, column=col_idx).font = Font(name="Arial")
+                    row_num += 1
+
+            ws.column_dimensions["A"].width = 28
+            ws.column_dimensions["B"].width = 22
+            ws.column_dimensions["C"].width = 18
+            ws.column_dimensions["D"].width = 22
+            ws.freeze_panes = "A2"
+
+            file_path = f"{key}_{uuid.uuid4().hex[:6]}.xlsx"
+            wb.save(file_path)
+
+            # ফাইল পাঠানোর পর এই ক্যাটাগরির ডাম্প খালি করে দেওয়া হচ্ছে,
+            # যাতে পরের বার শুধু নতুন সাবমিশনগুলোই থাকে
+            d[key] = []
+            _save(d)
+
+        with open(file_path, "rb") as f:
+            await update.message.reply_document(
+                document=f,
+                filename=f"{label}_Submissions.xlsx",
+                caption=f"📄 মোট {len(dump_list)} টি {label} সাবমিশন, {len(grouped)} টি টাস্কে ভাগ করা। (এই ফাইল পাঠানোর সাথে সাথে লিস্ট খালি হয়ে গেছে, এখন থেকে নতুন সাবমিশন জমা হবে।)"
+            )
+        os.remove(file_path)
+        return
+
+    if user_id == ADMIN_ID and text == "PASSWORD CHANGE":
+        USER_STATE[user_id] = {"step": "admin_change_password"}
+        current_pwd = db_data.get("task_password", "shuvo9")
+        await update.message.reply_text(f"🔐 বর্তমান টাস্ক পাসওয়ার্ড: `{current_pwd}`\n\nনতুন যে পাসওয়ার্ডটি সেট করতে চান তা লিখে পাঠান:", parse_mode="Markdown")
+        return
+
+    if user_id == ADMIN_ID and text == "DELETE TASK":
+        btn_del_ig = InlineKeyboardButton("📸 Instagram Tasks", callback_data="adm_del_cat:instagram")
+        btn_del_fb = InlineKeyboardButton("📘 Facebook Tasks", callback_data="adm_del_cat:facebook")
+        _style(btn_del_ig, 'danger')
+        _style(btn_del_fb, 'danger')
+        kb = InlineKeyboardMarkup([[btn_del_ig, btn_del_fb]])
+        await update.message.reply_text("🗑️ কোন ক্যাটাগরির কাজ ডিলিট করতে চান?", reply_markup=kb)
+        return
+
+    if user_id == ADMIN_ID and text == "WORK VIDEO":
+        btn_vid_ig = InlineKeyboardButton("Instagram Tasks", callback_data="adm_vid_cat:instagram")
+        btn_vid_fb = InlineKeyboardButton("Facebook Tasks", callback_data="adm_vid_cat:facebook")
+        _style(btn_vid_ig, 'primary')
+        _style(btn_vid_fb, 'primary')
+
+        kb = InlineKeyboardMarkup([[btn_vid_ig, btn_vid_fb]])
+        await update.message.reply_text("🎥 কোন ক্যাটাগরির টাস্কের ভিডিও সেট করতে চান?", reply_markup=kb)
+        return
+
+    if user_id == ADMIN_ID and text == "USERNAME SAVE":
+        USER_STATE[user_id] = {"step": "admin_save_username"}
+        await update.message.reply_text("📥 আপনি যে ইউজারনেমগুলো সেভ করে রাখতে চান সেগুলো পাঠান:\n(একাধিক ইউজারনেম স্পেস বা কমা দিয়ে একসাথে পাঠাতে পারেন)")
+        return
+
+    if user_id == ADMIN_ID and text == "ADD TASK":
+        USER_STATE[user_id] = {"step": "add_task_button_name"}
+        await update.message.reply_text("📝 বাটনের একটি সুন্দর নাম দিন:\n\nউদাহরণ: Like 50 Posts, Share 5 Posts, Follow Account, ইত্যাদি")
+        return
+
+    if user_id == ADMIN_ID and text == "TASK HIDE/SHOW":
+        v = db_data["visibility"]
+        btn_h_ig = InlineKeyboardButton(f"📸 Instagram [{'ON' if v.get('instagram_task',True) else 'OFF'}]", callback_data="h_ig_m")
+        btn_h_fb = InlineKeyboardButton(f"📘 Facebook [{'ON' if v.get('facebook_task',True) else 'OFF'}]", callback_data="h_fb_m")
+        _style(btn_h_ig, 'primary')
+        _style(btn_h_fb, 'success')
+        kb = InlineKeyboardMarkup([[btn_h_ig, btn_h_fb]])
+        await update.message.reply_text("👁️ Click to Toggle Category Visibility:", reply_markup=kb)
+        return
+
+    if user_id == ADMIN_ID and text == "USER BROADCAST":
+        USER_STATE[user_id] = {"step": "broadcast_msg"}
+        await update.message.reply_text("📢 Send the message you wish to broadcast to all users:")
+        return
+
+    if user_id == ADMIN_ID and text == "ADD MONEY":
+        USER_STATE[user_id] = {"step": "add_money_uid"}
+        await update.message.reply_text("👤 Send the target User identification (UID) number:")
+        return
+
+    if user_id == ADMIN_ID and text == "USER DELETE":
+        total_saved_usernames = len(db_data.get("saved_usernames", []))
+        btn_conf_del = InlineKeyboardButton("⚠️ ডিলিট নিশ্চিত করুন", callback_data="adm_confirm_delete_all_saved_usernames")
+        _style(btn_conf_del, 'danger')
+        
+        kb = InlineKeyboardMarkup([[btn_conf_del]])
+        await update.message.reply_text(
+            f"📊 বটের মোট সেভ করা ইউজারনেমের সংখ্যা: {total_saved_usernames} টি।\n\n"
+            f"❗ আপনি যদি বটের সমস্ত সেভ করা ইউজারনেম ডাটা ডিলিট করতে চান তবে নিচের ডিলিট বাটনে ক্লিক করুন।",
+            reply_markup=kb
+        )
+        return
+
+    if user_id == ADMIN_ID and text == "ALL REPORT":
+        pending_subs = [s for s in db_data["submissions"].values() if s["status"] == "pending"]
+        if not pending_subs:
+            await update.message.reply_text("✅ No pending item reports.")
+            return
+            
+        for s in pending_subs:
+            btn_app = InlineKeyboardButton("Approve", callback_data=f"rep_app:{s['sub_id']}")
+            btn_rej = InlineKeyboardButton("Reject", callback_data=f"rep_rej:{s['sub_id']}")
+            _style(btn_app, 'success')
+            _style(btn_rej, 'danger')
+            inline_ap = InlineKeyboardMarkup([[btn_app, btn_rej]])
+            
+            u_name = s.get('username') or f"UID: {s['user_id']}"
+            t_type = "Cookies" if s.get('task_type') == "cookies" else "2FA"
+            
+            # 🎯 ফেসবুক এবং ইনস্টাগ্রামের ক্যাটাগরি অনুযায়ী রিপোর্ট ফরম্যাট সাজানো
+            if s.get('category') == "facebook":
+                report_txt = (
+                    f"🆔 User : @{u_name}\n"
+                    f"🍪 Type: {t_type}\n"
+                    f"📱 FB UID: {s.get('fb_uid', 'N/A')}\n"
+                    f"⏳ Status: Pending"
+                )
+            else:
+                report_txt = (
+                    f"🆔 User : @{u_name}\n"
+                    f"🍪 Type: Cookies\n"
+                    f"📱 Login: {s.get('login', 'N/A')}\n"
+                    f"⏳ Status: Pending"
+                )
+                
+            await update.message.reply_text(report_txt, reply_markup=inline_ap)
+        return
+
+    if text in [ln["btn_cancel"], ln["btn_back"], "cancel", "❌ cancel", "🔙 BACK"]:
+        USER_STATE.pop(user_id, None)
+        await update.message.reply_text("🔙 Menu", reply_markup=main_menu_keyboard(user_id, lang))
+
+# ============================================================
+# CALLBACK QUERY PROCESSING & BACKGROUND TIMER
+# ============================================================
+
+async def delete_message_after_delay(context: ContextTypes.DEFAULT_TYPE, chat_id: int, message_id: int, delay: int):
+    await asyncio.sleep(delay)
+    try:
+        await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
+    except:
+        pass
+
+async def task_timeout_watcher(context: ContextTypes.DEFAULT_TYPE, user_id: int, chat_id: int, session_id: str, delay: int = 600):
+    """
+    কোনো ইউজার একটা টাস্ক শুরু করার পর নির্দিষ্ট সময়ের (ডিফল্ট ১০ মিনিট)
+    মধ্যে সম্পূর্ণ না করলে টাস্কটা স্বয়ংক্রিয়ভাবে বাতিল করে দেয়, আর
+    "Return to main menu" বাটন সহ একটা টাইমআউট মেসেজ পাঠায়।
+    """
+    await asyncio.sleep(delay)
+    current_state = USER_STATE.get(user_id, {})
+    if current_state.get("session_id") != session_id:
+        return  # ইউজার ইতিমধ্যে টাস্ক শেষ করেছে/বাতিল করেছে/অন্য কিছুতে চলে গেছে
+    USER_STATE.pop(user_id, None)
+    btn_ret = KeyboardButton("🔙 Return to main menu")
+    kb = ReplyKeyboardMarkup([[btn_ret]], resize_keyboard=True)
+    try:
+        await context.bot.send_message(chat_id=chat_id, text="🕐 Time's up! Task cancelled.❌", reply_markup=kb)
+    except Exception:
+        pass
+
+async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if not query or not query.from_user:
+        return
+    user_id = query.from_user.id
+    data = query.data
+    
+    db_data = _load()
+    user_profile = get_or_create_user(user_id, query.from_user.username or "")
+    lang = user_profile.get("language", "bn")
+    ln = LANGUAGES[lang]
+
+    await query.answer()
+
+    if data == "verify_join":
+        if await is_user_joined_all(context.bot, user_id):
+            try: await query.delete_message()
+            except: pass
+            
+            success_msg = await context.bot.send_message(chat_id=user_id, text=ln["verify_success"])
+            asyncio.create_task(delete_message_after_delay(context, user_id, success_msg.message_id, 5))
+            
+            await asyncio.sleep(5)
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=ln["welcome"].format(name=query.from_user.first_name),
+                reply_markup=main_menu_keyboard(user_id, lang)
+            )
+        else:
+            await context.bot.send_message(chat_id=user_id, text=ln["not_joined_all"])
+        return
+
+    if data == "refresh_2fa_code":
+        state = USER_STATE.get(user_id)
+        if state and state.get("step") == "2fa_verify" and "secret" in state:
+            try:
+                totp = pyotp.TOTP(state["secret"])
+                current_code = totp.now()
+                remaining = 30 - (int(datetime.datetime.now().timestamp()) % 30)
+                
+                btn_ref = InlineKeyboardButton("🔄 Refresh", callback_data="refresh_2fa_code")
+                _style(btn_ref, 'primary')
+                inline_kb = InlineKeyboardMarkup([[btn_ref]])
+                
+                await query.edit_message_text(
+                    f"╔══════════╗\n"
+                    f"🔑 Your 2FA Code\n"
+                    f"╚══════════╝\n\n"
+                    f"🔢 Code : `{current_code}`\n\n"
+                    f"⏱️ Valid : {remaining}s\n"
+                    f"━━━━━━━━━━",
+                    parse_mode="Markdown",
+                    reply_markup=inline_kb
+                )
+            except:
+                pass
+        return
+
+    if data == "cancel_add_task":
+        USER_STATE.pop(user_id, None)
+        await query.edit_message_text("❌ বাতিল করা হয়েছে। Admin Panel 에 ফিরে গেছেন।")
+        return
+
+    if data.startswith("adm_cat:"):
+        parts = data.split(":")
+        cat = parts[1]
+        state = USER_STATE.get(user_id, {})
+        
+        if state.get("step") == "select_category_for_task":
+            task_name = state.get("task_name")
+            USER_STATE[user_id] = {"category": cat, "step": "admin_task_price", "task_name": task_name}
+            await query.message.reply_text(f"📝 বাটন নাম: {task_name}\n📁 Category: {cat}\n\n💵 টাস্কের দাম কত হবে লিখুন (যেমন: 5, 10.5):")
+            try: await query.delete_message()
+            except: pass
+            return
+        
+        task_name = parts[2] if len(parts) > 2 else None
+        if task_name:
+            USER_STATE[user_id] = {"category": cat, "step": "admin_task_name", "selected_task_name": task_name}
+            await query.message.reply_text(f"📝 Task: {task_name}\n📁 Category: {cat}\n\n💰 টাস্কের মূল্য দিন (Price in $):")
+            try: await query.delete_message()
+            except: pass
+        else:
+            USER_STATE[user_id] = {"category": cat, "step": "admin_task_name"}
+            await query.message.reply_text("📝 টাস্কের একটি সুন্দর নাম (Name) দিন:")
+            try: await query.delete_message()
+            except: pass
+        return
+
+    if data.startswith("adm_del_cat:"):
+        cat = data.split(":")[1]
+        active_tasks = [t for t in db_data.get("dynamic_tasks", {}).values() if t.get("category") == cat]
+        if not active_tasks:
+            await query.message.reply_text("❌ এই ক্যাটাগরিতে ডিলিট করার মতো কোনো একটিভ কাজ পাওয়া যায়নি।")
+            return
+            
+        buttons = []
+        for t in active_tasks:
+            btn_t_del = InlineKeyboardButton(f"🗑️ {t['name']} (${t['price']})", callback_data=f"adm_do_del:{t['id']}")
+            _style(btn_t_del, 'danger')
+            buttons.append([btn_t_del])
+            
+        await query.message.reply_text("👇 নিচে থেকে যে টাস্কটি ডিলিট করতে চান সেটির উপর চাপুন:", reply_markup=InlineKeyboardMarkup(buttons))
+        try: await query.delete_message()
+        except: pass
+        return
+
+    if data.startswith("adm_do_del:"):
+        task_id = data.split(":")[1]
+        with _lock:
+            d = _load()
+            if task_id in d.get("dynamic_tasks", {}):
+                removed_task = d["dynamic_tasks"].pop(task_id)
+                _save(d)
+                await query.message.reply_text(f"✅ সফলভাবে টাস্কটি ডিলিট করা হয়েছে!\n🗑️ ডিলিট হওয়া টাস্ক: {removed_task['name']}")
+            else:
+                await query.message.reply_text("❌ দুঃখিত! টাস্কটি খুঁজে পাওয়া যায়নি অথবা অলরেডি ডিলিট হয়ে গেছে।")
+        try: await query.delete_message()
+        except: pass
+        return
+
+    if data.startswith("adm_vid_cat:"):
+        cat = data.split(":")[1]
+        active_tasks = [t for t in db_data.get("dynamic_tasks", {}).values() if t.get("category") == cat]
+        if not active_tasks:
+            await query.message.reply_text("❌ এই ক্যাটাগরিতে কোনো একটিভ টাস্ক পাওয়া যায়নি।")
+            return
+
+        buttons = []
+        for t in active_tasks:
+            has_vid = "🎥" if t.get("video_file_id") else "⬜"
+            btn_t_vid = InlineKeyboardButton(f"{has_vid} {t['name']}", callback_data=f"adm_vid_task:{t['id']}")
+            _style(btn_t_vid, 'primary')
+            buttons.append([btn_t_vid])
+
+        await query.message.reply_text("👇 কোন টাস্কের জন্য ভিডিও সেট করতে চান? (🎥 = আগে থেকেই ভিডিও সেট আছে)", reply_markup=InlineKeyboardMarkup(buttons))
+        try: await query.delete_message()
+        except: pass
+        return
+
+    if data.startswith("adm_vid_task:"):
+        task_id = data.split(":")[1]
+        t_data = db_data.get("dynamic_tasks", {}).get(task_id)
+        if not t_data:
+            await query.message.reply_text("❌ দুঃখিত! টাস্কটি খুঁজে পাওয়া যায়নি।")
+            return
+        USER_STATE[user_id] = {"step": "waiting_for_task_video", "task_id": task_id}
+        await query.message.reply_text(f"🎥 '{t_data['name']}' টাস্কের জন্য এখন একটা ভিডিও পাঠান (ফাইল হিসেবে ভিডিও আপলোড করুন):")
+        try: await query.delete_message()
+        except: pass
+        return
+
+    if data.startswith("adm_t_type:"):
+        t_type = data.split(":")[1]
+        state = USER_STATE.get(user_id)
+        if state and "category" in state and (state.get("selected_task_name") or state.get("task_name")):
+            t_id = str(uuid.uuid4())[:8]
+            new_task = {
+                "id": t_id, "category": state["category"], "name": state.get("selected_task_name") or state.get("task_name"),
+                "price": state.get("task_price", 0.0), "rules": state.get("task_rules", ""), "type": t_type,
+                "video_file_id": None
+            }
+            with _lock:
+                d = _load()
+                if "dynamic_tasks" not in d: d["dynamic_tasks"] = {}
+                d["dynamic_tasks"][t_id] = new_task
+                _save(d)
+                
+            USER_STATE.pop(user_id, None)
+            await query.message.reply_text(f"✅ সফলভাবে নতুন টাস্ক সিস্টেমে সেভ করা হয়েছে!\n\n📌 নাম: {new_task['name']}\n💵 পেমেন্ট: ${new_task['price']}\n🎯 টাইপ: {new_task['type'].upper()}")
+            try: await query.delete_message()
+            except: pass
+        return
+
+    if data.startswith("lang_"):
+        new_lang = "bn" if data == "lang_bn" else "en"
+        with _lock:
+            d = _load()
+            d["users"][str(user_id)]["language"] = new_lang
+            _save(d)
+        await query.message.reply_text(LANGUAGES[new_lang]["lang_changed"], reply_markup=main_menu_keyboard(user_id, new_lang))
+        try: await query.delete_message()
+        except: pass
+        return
+
+    if data == "start_withdraw":
+        USER_STATE[user_id] = {"step": "withdraw_method"}
+        
+        btn_bks = InlineKeyboardButton("bKash", callback_data="w_meth:bKash")
+        btn_ngd = InlineKeyboardButton("Nagad", callback_data="w_meth:Nagad")
+        btn_bnc = InlineKeyboardButton("Binance", callback_data="w_meth:Binance")
+        _style(btn_bks, 'success')
+        _style(btn_ngd, 'success')
+        _style(btn_bnc, 'primary')
+        
+        kb = InlineKeyboardMarkup([[btn_bks, btn_ngd], [btn_bnc]])
+        await query.edit_message_text(LANGUAGES[lang]["select_meth"], reply_markup=kb)
+        return
+
+    if data.startswith("w_meth:"):
+        method = data.split(":")[1]
+        USER_STATE[user_id]["method"] = method
+        USER_STATE[user_id]["step"] = "withdraw_num"
+        
+        btn_cnc = KeyboardButton(LANGUAGES[lang]["btn_cancel"])
+        _style(btn_cnc, 'danger')
+        
+        if method == "Binance":
+            prompt = "🟡 আপনার Binance UID দিন:" if lang == "bn" else "🟡 Please send your Binance UID:"
+        else:
+            prompt = LANGUAGES[lang]["send_num"].format(method=method)
+        await context.bot.send_message(chat_id=user_id, text=prompt, reply_markup=ReplyKeyboardMarkup([[btn_cnc]], resize_keyboard=True))
+        try: await query.delete_message()
+        except: pass
+        return
+
+    if user_id != ADMIN_ID:
+        return
+
+    if data == "adm_confirm_delete_all_saved_usernames":
+        with _lock:
+            d = _load()
+            d["saved_usernames"] = []
+            _save(d)
+        await query.message.reply_text("💥 সফলভাবে বটের সকল সেভ করা ইউজারনেম ডাটা ডিলিট করে দেওয়া হয়েছে!", reply_markup=main_menu_keyboard(user_id, lang))
+        try: await query.delete_message()
+        except: pass
+        return
+
+    if data.startswith("h_"):
+        key_map = {
+            "h_ig_m": "instagram_task", "h_fb_m": "facebook_task",
+        }
+        if data not in key_map:
+            return
+        target_key = key_map[data]
+        with _lock:
+            d = _load()
+            d["visibility"][target_key] = not d["visibility"].get(target_key, True)
+            _save(d)
+        v = d["visibility"]
+
+        btn_m_ig = InlineKeyboardButton(f"📸 Instagram [{'ON' if v.get('instagram_task',True) else 'OFF'}]", callback_data="h_ig_m")
+        btn_m_fb = InlineKeyboardButton(f"📘 Facebook [{'ON' if v.get('facebook_task',True) else 'OFF'}]", callback_data="h_fb_m")
+        _style(btn_m_ig, 'primary')
+        _style(btn_m_fb, 'success')
+
+        kb = InlineKeyboardMarkup([[btn_m_ig, btn_m_fb]])
+        await query.edit_message_text("👁️ Category Visibility toggled:", reply_markup=kb)
+        return
+
+    if data.startswith("w_app:") or data.startswith("w_rej:"):
+        w_id = data.split(":")[1]
+        is_approve = data.startswith("w_app:")
+        with _lock:
+            d = _load()
+            w_rec = d["withdrawals"].get(w_id)
+            if w_rec and w_rec["status"] == "pending":
+                w_lang = d["users"].get(str(w_rec["user_id"]), {}).get("language", "bn")
+                if is_approve:
+                    w_rec["status"] = "approved"
+                    d["users"][str(w_rec["user_id"])]["balance"] = round(d["users"][str(w_rec["user_id"])]["balance"] - w_rec["amount"], 2)
+                    msg = f"✅ Approved ${w_rec['amount']}"
+                    if w_rec["method"] == "Binance":
+                        num_label = "Binance UID" 
+                    else:
+                        num_label = "নম্বর" if w_lang == "bn" else "Number"
+                    if w_lang == "bn":
+                        u_msg = f"✅ উত্তোলন সফল হয়েছে\n\n{num_label}: {w_rec['number']}\nমাধ্যম: {w_rec['method']}\nপরিমাণ: ${w_rec['amount']}"
+                    else:
+                        u_msg = f"✅ Withdrawal Successful\n\n{num_label}: {w_rec['number']}\nMethod: {w_rec['method']}\nAmount: ${w_rec['amount']}"
+                else:
+                    w_rec["status"] = "rejected"
+                    msg = "❌ Rejected"
+                    u_msg = "❌ আপনার উত্তোলন অনুরোধটি বাতিল করা হয়েছে।" if w_lang == "bn" else "❌ Your withdrawal request has been rejected."
+                _save(d)
+                await query.edit_message_text(msg)
+                try: await context.bot.send_message(chat_id=w_rec["user_id"], text=u_msg)
+                except: pass
+        return
+
+    if data.startswith("rep_app:") or data.startswith("rep_rej:"):
+        sub_id = data.split(":")[1]
+        is_approve = data.startswith("rep_app:")
+        with _lock:
+            d = _load()
+            s_rec = d["submissions"].get(sub_id)
+            if s_rec and s_rec["status"] == "pending":
+                u_id_str = str(s_rec["user_id"])
+                if is_approve:
+                    s_rec["status"] = "approved"
+                    t_info = d.get("dynamic_tasks", {}).get(s_rec.get("task_id"), {})
+                    p_add = t_info.get("price", 3.5)
+                    d["users"][u_id_str]["balance"] = round(d["users"][u_id_str]["balance"] + p_add, 2)
+                    d["users"][u_id_str]["success_count"] += 1
+                    d["users"][u_id_str]["review_count"] = max(0, d["users"][u_id_str]["review_count"] - 1)
+                    msg = "✅ Approved submission."
+                    u_lang = d["users"][u_id_str].get("language", "bn")
+                    u_msg = f"✅ রিপোর্ট গৃহীত হয়েছে, +${p_add}" if u_lang == "bn" else f"✅ Report approved, +${p_add}"
+
+                else:
+                    s_rec["status"] = "rejected"
+                    d["users"][u_id_str]["rejected_count"] += 1
+                    d["users"][u_id_str]["review_count"] = max(0, d["users"][u_id_str]["review_count"] - 1)
+                    msg = "❌ Rejected submission."
+                    u_lang = d["users"][u_id_str].get("language", "bn")
+                    u_msg = "❌ আপনার রিপোর্টটি বাতিল করা হয়েছে 🥹" if u_lang == "bn" else "❌ Your Report Has Been Rejected 🥹"
+                _save(d)
+                await query.edit_message_text(msg)
+                try: await context.bot.send_message(chat_id=s_rec["user_id"], text=u_msg)
+                except: pass
+
+# ============================================================
+# ADMIN TASK VIDEO UPLOAD HANDLER
+# ============================================================
+async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    এডমিন 'Work Video' ফিচার দিয়ে যখন কোনো টাস্কের জন্য ভিডিও আপলোড করেন,
+    তখন এটা ধরে সেই টাস্কের সাথে ভিডিওটা যুক্ত করে দেয়।
+    """
+    if not update.effective_user or not update.message or not update.message.video:
+        return
+    user_id = update.effective_user.id
+    if user_id != ADMIN_ID:
+        return
+    state = USER_STATE.get(user_id, {})
+    if state.get("step") != "waiting_for_task_video":
+        return
+
+    task_id = state.get("task_id")
+    video_file_id = update.message.video.file_id
+
+    with _lock:
+        d = _load()
+        if task_id in d.get("dynamic_tasks", {}):
+            d["dynamic_tasks"][task_id]["video_file_id"] = video_file_id
+            _save(d)
+            task_name = d["dynamic_tasks"][task_id]["name"]
+            await update.message.reply_text(f"✅ '{task_name}' টাস্কের জন্য ভিডিও সফলভাবে সেট করা হয়েছে!")
+        else:
+            await update.message.reply_text("❌ দুঃখিত! টাস্কটি খুঁজে পাওয়া যায়নি (হয়তো ডিলিট হয়ে গেছে)।")
+    USER_STATE.pop(user_id, None)
+
+# ============================================================
+# GLOBAL ERROR HANDLER
+# ============================================================
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    """
+    বটের যেকোনো হ্যান্ডলারে কোনো এরর হলে এটা ধরে ফেলে এবং শুধু log-এ
+    সংক্ষেপে দেখায় (পুরো messy traceback console-এ আসা বন্ধ করে)।
+    এটার কারণে বট কখনো ক্র্যাশ করবে না, শুধু ওই একটা রিকোয়েস্ট স্কিপ হবে।
+    """
+    err = context.error
+
+    # Telegram-এর নিজস্ব Conflict এরর (একই টোকেনের একাধিক instance বা
+    # deploy transition-এর সময় সাময়িকভাবে আসে) — এটা harmless, তাই
+    # শুধু ছোট্ট একটা info লাইন দেখিয়ে চুপচাপ স্কিপ করা হচ্ছে।
+    if isinstance(err, Conflict):
+        logger.warning("Conflict: অন্য কোনো bot instance সাময়িকভাবে সক্রিয় ছিল, স্বয়ংক্রিয়ভাবে recover হচ্ছে।")
+        return
+
+    logger.error(f"হ্যান্ডলারে সমস্যা হয়েছে: {err}", exc_info=err)
+
+    # ঠিক কোথায় (কোন ফাইলের কোন লাইনে) এররটা হয়েছে সেটা বের করে শুধু
+    # Render Logs-এ রাখা হচ্ছে (এডমিনের Telegram ইনবক্সে আর কোনো এরর
+    # মেসেজ পাঠানো হবে না, বট নিঃশব্দে সামলে নেবে)।
+    location = ""
+    try:
+        tb = err.__traceback__
+        last_frame = tb
+        while last_frame.tb_next:
+            last_frame = last_frame.tb_next
+        fname = os.path.basename(last_frame.tb_frame.f_code.co_filename)
+        func_name = last_frame.tb_frame.f_code.co_name
+        line_no = last_frame.tb_lineno
+        location = f"{fname} → {func_name}() → line {line_no}"
+        logger.error(f"📍 এররের অবস্থান: {location}")
+    except Exception:
+        pass
+
+# ============================================================
+# FLASK KEEP-ALIVE SERVER (Render "Web Service" পোর্ট চায় + Uptime
+# monitor যেমন UptimeRobot দিয়ে পিং করলে বট কখনো ঘুমাবে না/বন্ধ হবে না)
+# ============================================================
+from flask import Flask
+_flask_app = Flask(__name__)
+_START_TIME = datetime.datetime.utcnow()
+
+@_flask_app.route("/")
+def _home():
+    uptime = datetime.datetime.utcnow() - _START_TIME
+    return f"✅ Bot is running | Uptime: {str(uptime).split('.')[0]}"
+
+@_flask_app.route("/health")
+def _health():
+    return {"status": "ok", "uptime_seconds": int((datetime.datetime.utcnow() - _START_TIME).total_seconds())}
+
+def _run_dummy_server():
+    """
+    Render "Web Service" একটা খোলা পোর্ট আশা করে, নাহলে সার্ভিসটাকে
+    unhealthy ভেবে বারবার restart করে। Flask দিয়ে একটা হালকা সার্ভার
+    আলাদা থ্রেডে চালানো হচ্ছে — এটা বটের আসল কাজে কোনো প্রভাব ফেলে না।
+    এই "/" URL-টা UptimeRobot বা যেকোনো uptime monitor দিয়ে প্রতি
+    কয়েক মিনিটে পিং করলে Render সার্ভিসকে "sleep"/বন্ধ হতে দেবে না।
+    """
+    port = int(os.environ.get("PORT", 10000))
+    try:
+        _flask_app.run(host="0.0.0.0", port=port)
+    except Exception as e:
+        logger.error(f"Flask keep-alive সার্ভার চালু করা যায়নি: {e}")
+
+# ============================================================
+# MAIN EXECUTION
+# ============================================================
+
+def main():
+    _load()  # স্টার্টআপেই Firebase থেকে সব ডেটা load করে ক্যাশে বসিয়ে দেয়
+    logger.info("Firebase Realtime Database থেকে ডেটা সফলভাবে load হয়েছে।")
+    app = Application.builder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT, handle_message))
+    app.add_handler(MessageHandler(filters.VIDEO, handle_video))
+    app.add_handler(CallbackQueryHandler(callback_query))
+    app.add_error_handler(error_handler)
+    logger.info("Bot fully updated with Custom Report Layouts.")
+    app.run_polling(drop_pending_updates=True)
+
+if __name__ == "__main__":
+    import time
+    threading.Thread(target=_run_dummy_server, daemon=True).start()
+    # main() কোনো কারণে ক্র্যাশ করলে (যেমন নেটওয়ার্ক সাময়িকভাবে ডাউন
+    # থাকলে), পুরো সার্ভিস বন্ধ না হয়ে বট নিজে থেকে কয়েক সেকেন্ড পর
+    # আবার চালু হওয়ার চেষ্টা করবে।
+    while True:
+        try:
+            main()
+            break  # স্বাভাবিকভাবে থামলে (যেমন Ctrl+C) আর restart হবে না
+        except Exception as e:
+            logger.error(f"বট অপ্রত্যাশিতভাবে বন্ধ হয়ে গেছে, ৫ সেকেন্ড পর আবার চালু হচ্ছে: {e}", exc_info=e)
+            time.sleep(5)
