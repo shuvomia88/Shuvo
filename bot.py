@@ -311,20 +311,14 @@ def _premium_button_emoji(text: str):
     return None
 
 def InlineKeyboardButton(text, *args, **kwargs):
-    """Create an inline button with a Premium custom-emoji icon and no duplicate normal emoji."""
-    if "icon_custom_emoji_id" not in kwargs:
-        emoji_id = _premium_button_emoji(text)
-        if emoji_id:
-            kwargs["icon_custom_emoji_id"] = emoji_id
+    """Create an inline button (emoji stripped from label; icon_custom_emoji_id is NOT a
+    real Telegram Bot API field for buttons, so it must never be passed here — doing so
+    raises a TypeError and silently breaks whichever keyboard tries to build it)."""
     text = _premiumize_button_text(text)
     return _TelegramInlineKeyboardButton(text, *args, **kwargs)
 
 def KeyboardButton(text, *args, **kwargs):
-    """Create a reply-keyboard button with a Premium custom-emoji icon and no duplicate normal emoji."""
-    if "icon_custom_emoji_id" not in kwargs:
-        emoji_id = _premium_button_emoji(text)
-        if emoji_id:
-            kwargs["icon_custom_emoji_id"] = emoji_id
+    """Create a reply-keyboard button (see note in InlineKeyboardButton above)."""
     text = _premiumize_button_text(text)
     return _TelegramKeyboardButton(text, *args, **kwargs)
 
@@ -765,6 +759,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # --------------------------------------------------------
     # ADMIN FLOWS
     # --------------------------------------------------------
+
+    # আগে থেকে কোনো step আটকে থাকলেও (যেমন Add Task/Add Money মাঝপথে
+    # ছেড়ে দেওয়া) ADMIN PANEL বাটন চাপলে সবসময় সরাসরি প্যানেলে ফিরিয়ে
+    # আনার জন্য এই চেকটা সবার আগে রাখা হলো। আগে এটা অনেক নিচে থাকায়
+    # stuck state থাকলে বাটনটা কাজ করতো না।
+    if text in ["ADMIN PANEL", "🛠️ ADMIN PANEL", "🛠️ ENDMIN PANEL", "🛠️ এডমিন প্যানেল"] and user_id == ADMIN_ID:
+        USER_STATE.pop(user_id, None)
 
     if user_id == ADMIN_ID and USER_STATE.get(user_id, {}).get("step") == "admin_change_password":
         USER_STATE.pop(user_id, None)
